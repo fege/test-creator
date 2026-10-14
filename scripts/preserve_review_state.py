@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Save and restore cumulative review state across re-assessment cycles.
 
-Saves before_scores and revision history to a JSON state file before
-re-review, then restores them after the new review file is written.
+Saves before_scores, auto_revised, and revision history to a JSON state file
+before re-review, then restores them after the new review file is written.
 
 Usage:
     python3 scripts/preserve_review_state.py save <feature_dir>
@@ -77,7 +77,7 @@ def _replace_revision_history(content, new_history):
 
 
 def save(feature_dir):
-    """Save before_scores and revision history to a state file."""
+    """Save before_scores, auto_revised, and revision history to a state file."""
     rpath = _review_path(feature_dir)
     if not os.path.exists(rpath):
         print(f"SKIP (no review file in {feature_dir})")
@@ -87,6 +87,7 @@ def save(feature_dir):
     state = {
         "before_score": data.get("before_score"),
         "before_scores": data.get("before_scores"),
+        "auto_revised": data.get("auto_revised", False),
         "revision_history": _extract_revision_history(rpath),
     }
 
@@ -98,7 +99,7 @@ def save(feature_dir):
 
 
 def restore(feature_dir):
-    """Restore before_scores and revision history from the state file."""
+    """Restore cumulative scores, auto-revision status, and history from state."""
     spath = _state_path(feature_dir)
     if not os.path.exists(spath):
         print(f"SKIP (no state file for {feature_dir})")
@@ -117,6 +118,9 @@ def restore(feature_dir):
         fm_updates["before_score"] = state["before_score"]
     if state.get("before_scores"):
         fm_updates["before_scores"] = state["before_scores"]
+    if "auto_revised" in state:
+        current_data, _ = read_frontmatter(rpath)
+        fm_updates["auto_revised"] = state["auto_revised"] or current_data.get("auto_revised", False)
     if fm_updates:
         update_frontmatter(rpath, fm_updates, "test-plan-review")
 

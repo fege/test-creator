@@ -56,3 +56,6 @@ kubeconfig
 /.claude/skills/test-plan.analyze.infra
 /.claude/skills/test-plan.analyze.risks
 /.claude/skills/test-plan.review
+/.claude/
+/.plans/
+/.planning/
