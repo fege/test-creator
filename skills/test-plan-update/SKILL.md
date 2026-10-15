@@ -42,7 +42,7 @@ Parse `$ARGUMENTS` to extract:
    - GitHub PR: `https://github.com/org/repo/pull/5`
 2. **Remaining arguments** (optional): Paths to new documentation files (ADR, API
    spec, design spec, design doc, etc.). After setting
-   `repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)`, classify each path with the
+   `repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)`, classify each path with the
    deterministic CLI
    (`uv run --project "$repo_root" python "$repo_root/scripts/resolve_design_spec.py" --classify <path>`);
    use `kind` to decide labeling and whether to snapshot as a design spec. If no paths are
@@ -84,7 +84,7 @@ Then ask:
 Install the test-plan package (makes all scripts importable):
 ```bash
 bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap.sh" --layout "${CLAUDE_SKILL_DIR}" || exit 1
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
 ```
 
 If installation fails, inform the user and do NOT proceed. Once installed, all Python scripts will work from any directory.
@@ -93,7 +93,7 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
 
 1. **Use the shared locate-feature-dir utility**:
    ```bash
-   result=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "<source>")
+   result=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "<source>")
    if [ $? -ne 0 ]; then
        echo "$result"
        exit 1
@@ -112,7 +112,7 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
            FULLSEND_TARGET_REPO_DIR=$(cd "$FULLSEND_TARGET_REPO_DIR" && pwd -P) || exit 1
            export FULLSEND_TARGET_REPO_DIR
        fi
-       (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py validate-local-path "$feature_dir") || exit 1
+       (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py validate-local-path "$feature_dir") || exit 1
    fi
    ```
 
@@ -120,7 +120,7 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
 
 #### 0.3 Verify new documents exist
 
-Set `repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)`.
+Set `repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)`.
 
 If no document paths were provided, set `PULL_JIRA_DESIGN_SPEC=true` (fetch in Step 2 via
 `source_key`; feature-dir snapshot waits for Step 4). Otherwise, for each new document path:
@@ -302,7 +302,7 @@ unresolved_count=<from_statistics>
 new_count=<from_statistics>
 
 # Validate arithmetic (original - resolved + new = unresolved)
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/validate.py gap-counts \
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/validate.py gap-counts \
     "$feature_dir" $resolved_count $unresolved_count $new_count)
 
 if [ $? -ne 0 ]; then
@@ -324,7 +324,7 @@ fi
    # Update status: Open if gaps remain, Resolved if all resolved
    new_status=$([ $new_gap_count -eq 0 ] && echo "Resolved" || echo "Open")
 
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlanGaps.md \
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlanGaps.md \
        gap_count=$new_gap_count \
        status=$new_status)
    ```
@@ -385,14 +385,14 @@ Update the README with:
 
 1. **Bump version** (minor; if test cases were regenerated, bump twice):
    ```bash
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/version.py bump <feature_dir>/TestPlan.md minor)
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/version.py bump <feature_dir>/TestPlan.md minor)
    ```
    If test cases were regenerated, run a second minor bump.
    The script outputs JSON with `old_version` and `new_version`.
 
 2. **Update TestPlan.md frontmatter** (additional_docs and other fields):
    ```bash
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlan.md \
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlan.md \
        additional_docs="<updated_comma_separated_list>")
    ```
 

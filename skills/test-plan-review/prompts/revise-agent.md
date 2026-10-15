@@ -52,13 +52,13 @@ For each criterion that scored < 2:
 If you made one or more actual edits to `TestPlan.md`, set `auto_revised=true`:
 
 ```bash
-(cd "{CLAUDE_SKILL_DIR}/../.." && uv run python scripts/frontmatter.py set "{FEATURE_DIR}/TestPlanReview.md" auto_revised=true)
+(cd -P "{CLAUDE_SKILL_DIR}/../.." && uv run python scripts/frontmatter.py set "{FEATURE_DIR}/TestPlanReview.md" auto_revised=true)
 ```
 
 If you could not make any safe edits (for example, source material is missing), set `auto_revised=false`:
 
 ```bash
-(cd "{CLAUDE_SKILL_DIR}/../.." && uv run python scripts/frontmatter.py set "{FEATURE_DIR}/TestPlanReview.md" auto_revised=false)
+(cd -P "{CLAUDE_SKILL_DIR}/../.." && uv run python scripts/frontmatter.py set "{FEATURE_DIR}/TestPlanReview.md" auto_revised=false)
 ```
 
 ## Step 5: Update Revision History

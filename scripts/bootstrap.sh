@@ -21,6 +21,7 @@ if [[ "$(dirname "$skill_root")" != "$plugin_root/skills" \
 fi
 
 caller_root=$(pwd -P)
+same_root_fullsend_generation=false
 if [[ -n "${FULLSEND_TARGET_REPO_DIR:-}" ]]; then
     if [[ ! -d "$FULLSEND_TARGET_REPO_DIR" ]]; then
         echo "FULLSEND_TARGET_REPO_DIR must name the output workspace" >&2
@@ -28,19 +29,28 @@ if [[ -n "${FULLSEND_TARGET_REPO_DIR:-}" ]]; then
     fi
     output_root=$(cd "$FULLSEND_TARGET_REPO_DIR" && pwd -P)
     if [[ "$output_root" == "$plugin_root" ]]; then
-        echo "Fullsend plugin package and output workspace must be disjoint" >&2
-        exit 1
+        fullsend_task="${FULLSEND_TASK:-}"
+        fullsend_task="${fullsend_task%% *}"
+        case "$fullsend_task" in
+            /test-plan-create|/test-plan-create-cases) same_root_fullsend_generation=true ;;
+            * ) echo "Fullsend plugin package and output workspace must be disjoint" >&2; exit 1 ;;
+        esac
+    else
+        case "$output_root/" in
+            "${plugin_root%/}/"* ) echo "Fullsend plugin package and output workspace must be disjoint" >&2; exit 1 ;;
+        esac
+        case "$plugin_root/" in
+            "${output_root%/}/"* ) echo "Fullsend plugin package and output workspace must be disjoint" >&2; exit 1 ;;
+        esac
     fi
-    case "$output_root/" in
-        "${plugin_root%/}/"* ) echo "Fullsend plugin package and output workspace must be disjoint" >&2; exit 1 ;;
-    esac
-    case "$plugin_root/" in
-        "${output_root%/}/"* ) echo "Fullsend plugin package and output workspace must be disjoint" >&2; exit 1 ;;
-    esac
     case "$caller_root/" in
         "$output_root/"* ) ;;
         * ) echo "Caller workspace must stay inside the Fullsend output workspace" >&2; exit 1 ;;
     esac
+fi
+
+if [[ "$same_root_fullsend_generation" == true ]]; then
+    exit 0
 fi
 
 if [[ "$caller_root" == "$plugin_root" ]]; then

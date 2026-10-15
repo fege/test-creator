@@ -1,0 +1,8 @@
+version: "1"
+agents:
+  - source: test-plan/test-plan.yaml
+  - source: test-plan/test-plan-dry-run.yaml
+allowed_remote_resources:
+  - https://raw.githubusercontent.com/fullsend-ai/fullsend/
+  - https://raw.githubusercontent.com/opendatahub-io/odh-test-gen/
+  - https://raw.githubusercontent.com/fullsend-ai/agents/

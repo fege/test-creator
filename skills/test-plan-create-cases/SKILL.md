@@ -39,7 +39,7 @@ If `$ARGUMENTS` is empty, set `FORCE_OUTPUT_DIR=false` and go to **Interactive f
 If `$ARGUMENTS` is non-empty, parse **after** Step 0.1. Consume `--output-dir` before the positional feature source:
 
 ```bash
-OUTPUT_DIR=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+OUTPUT_DIR=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/parse_skill_args.py --output-dir "$ARGUMENTS") || {
     echo "ERROR: scripts/parse_skill_args.py failed — stopping." >&2
     exit 1
@@ -78,7 +78,7 @@ and proceed to Step 0.2.
 
 Install the test-plan package (makes all scripts importable):
 ```bash
-repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 (cd "$repo_root" && uv sync --extra dev)
 ```
 
@@ -95,7 +95,7 @@ If installation fails, inform the user and do NOT proceed.
    if [[ "$FEATURE_SOURCE" != https://github.com/* ]]; then
        FEATURE_SOURCE=$(python3 -c 'import os,sys; print(os.path.abspath(os.path.expanduser(sys.argv[1])))' "$FEATURE_SOURCE")
    fi
-   result=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "$FEATURE_SOURCE")
+   result=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "$FEATURE_SOURCE")
    if [ $? -ne 0 ]; then
        echo "$result"
        exit 1
@@ -110,7 +110,7 @@ If installation fails, inform the user and do NOT proceed.
    `/test-plan-create`, which always writes `<feature_dir>/.test-plan-output-dir.json`):
    ```bash
    if [ "$source_type" = "local" ]; then
-       repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+       repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
        discover_feature_dir_script="$repo_root/scripts/discover_feature_dir.py"
        if [ "$(pwd -P)" != "$repo_root" ]; then
            discover_feature_dir_script=".odh-test-gen/scripts/discover_feature_dir.py"
@@ -130,7 +130,7 @@ If installation fails, inform the user and do NOT proceed.
            FULLSEND_TARGET_REPO_DIR=$(cd "$FULLSEND_TARGET_REPO_DIR" && pwd -P) || exit 1
            export FULLSEND_TARGET_REPO_DIR
        fi
-       (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py validate-local-path "$feature_dir") || exit 1
+       (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py validate-local-path "$feature_dir") || exit 1
    fi
    ```
 
@@ -153,7 +153,7 @@ If installation fails, inform the user and do NOT proceed.
 ### Step 1.6: Read Design Spec / Additional Docs (if available)
 
 ```bash
-repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 source_key=$(cd "$repo_root" && uv run python scripts/frontmatter.py read \
   "$feature_dir/TestPlan.md" source_key) || exit 1
 additional_docs_raw=$(cd "$repo_root" && \
@@ -184,7 +184,7 @@ Prefer it for **TC-UI-*** (one `J-*`, `SCR-*`/`TU-*`/`DATA-*`, keep objectives).
 
 1. **Check for existing test cases**:
    ```bash
-   regen_check=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/tc_regeneration.py check "$feature_dir")
+   regen_check=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/tc_regeneration.py check "$feature_dir")
    mode=$(printf '%s\n' "$regen_check" | jq -r '.mode')
    existing_count=$(printf '%s\n' "$regen_check" | jq -r '.existing_count')
    ```
@@ -369,7 +369,7 @@ Run these coverage checks:
 Run:
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
  uv run python scripts/validate.py test-cases "$feature_dir" && \
  uv run python scripts/validate.py tc-counts "$feature_dir" && \
  uv run python scripts/validate.py tc-scope "$feature_dir" && \

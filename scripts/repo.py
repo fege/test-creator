@@ -656,9 +656,24 @@ def cmd_validate_local_path(args):
 
     if runtime_root:
         output_root = Path(runtime_root).expanduser().resolve()
+        task_words = os.environ.get("FULLSEND_TASK", "").split(maxsplit=1)
+        fullsend_task = task_words[0] if task_words else ""
+        if output_root == skill_root_path:
+            if fullsend_task not in {"/test-plan-create", "/test-plan-create-cases"}:
+                print(
+                    "❌ ERROR: The producer checkout is a Fullsend target only for create/cases tasks",
+                    file=sys.stderr,
+                )
+                return 1
+            if not path_abs.is_relative_to(output_root):
+                print(
+                    "❌ ERROR: Fullsend create/cases output must stay in the producer checkout",
+                    file=sys.stderr,
+                )
+                return 1
+            return 0
         if (
-            output_root == skill_root_path
-            or output_root.is_relative_to(skill_root_path)
+            output_root.is_relative_to(skill_root_path)
             or skill_root_path.is_relative_to(output_root)
             or not path_abs.is_relative_to(output_root)
         ):

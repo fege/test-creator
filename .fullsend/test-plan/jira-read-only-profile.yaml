@@ -1,0 +1,15 @@
+id: jira
+display_name: Jira (read-only)
+description: Read-only Jira access for test-plan comparison runs
+category: data
+endpoints:
+  - host: "redhat.atlassian.net"
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    access: read-only
+binaries:
+  - path: "**/python"
+  - path: "**/python*"
+  - path: "**/python3"
+  - path: "**/curl"

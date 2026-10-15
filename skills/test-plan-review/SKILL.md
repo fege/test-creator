@@ -13,7 +13,7 @@ allowedTools:
 
 # Test Plan Reviewer
 
-Internal orchestrator that reviews and scores a test plan using the quality rubric (5 criteria, 0-2 each, 10-point scale). Auto-revises failing plans and re-scores up to 2 times.
+Internal orchestrator: scores five criteria (0–2 each), then auto-revises and re-scores failing plans up to twice.
 
 ## Usage
 
@@ -28,34 +28,40 @@ Parse `$ARGUMENTS` to extract:
 1. **Feature directory** (required): path to directory containing `TestPlan.md`
 
 ### Auto-detection
-If no arguments provided and `test-plan.create` just generated a test plan in this session, use that feature directory automatically.
+If `test-plan.create` just generated a plan in this session and no arguments were provided, use its feature directory.
 
 ## Process
 
+### Model selection for review forks
+
+For every score, review, and revise `Agent` call, including repeated cycles,
+omit the `model` parameter so normal runtime resolution uses the active model
+for this review skill. Never pass a per-call `inherit` value, model ID, or
+family alias as a model override.
+
 ### Step 0: Python dependencies
 
-Install the test-plan package (makes all scripts importable):
+Install the test-plan package (scripts are then importable anywhere):
 ```bash
 bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap.sh" --layout "${CLAUDE_SKILL_DIR}" || exit 1
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
 ```
 
-If installation fails, inform the user and do NOT proceed. Once installed, all Python scripts will work from any directory.
+If installation fails, inform the user and do NOT proceed.
 
 ### Step 1: Read Test Plan and Resolve Source Strategy
 
 1. Read `<feature_dir>/TestPlan.md`
 2. Read frontmatter to extract `source_key`:
    ```bash
-   source_key=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+   source_key=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
                 uv run python scripts/frontmatter.py read <feature_dir>/TestPlan.md source_key)
    ```
-3. Resolve the source strategy via the shared resolver — snapshot-primary: reads
-   `<feature_dir>/.source-strategy.md` if `test-plan.create` already saved one, otherwise fetches
-   from Jira and saves it there for next time. No degraded mode: if neither is available, this is
-   a hard failure.
+3. Resolve the strategy with the shared snapshot-primary resolver: use
+   `<feature_dir>/.source-strategy.md` if saved by `test-plan.create`; otherwise fetch from Jira and
+   save it. Fail if neither source is available.
    ```bash
-   repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+   repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
    resolve_result=$(cd "$repo_root" && uv run python scripts/resolve_strategy.py <feature_dir> "$source_key")
    resolve_exit=$?
 
@@ -68,14 +74,15 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
    strategy_file_path=$(printf '%s\n' "$resolve_result" | jq -r '.strategy_file')
    ```
 
-   The resolver is read-only with respect to Jira. It preserves typed Jira request failures and
-   returns the stable `jira_fetch_failed` error instead of exposing request URLs, server details, or
-   accepting a partial strategy.
+   Jira access is read-only. The resolver preserves typed request failures and returns stable
+   `jira_fetch_failed` without exposing request URLs/server details or accepting partial strategies.
 
-   `strategy_file_path` is the persistent, local-only snapshot — it is never removed (not at Step
-   5, not across any re-score cycle) and is reused as-is on every re-score in Step 4e.
+   Keep `strategy_file_path` as a persistent local snapshot: never remove it, including at Step 5 or
+   between cycles; reuse it unchanged for every Step 4e re-score.
 
-4. Compute interface coverage, AC/NFR citation validity, bidirectional scope coverage, and actionability evidence deterministically (these are mechanical checks — none is an LLM judgment call). This is delegated to [`scripts/build_citation_inputs.py`](../../scripts/build_citation_inputs.py), which derives `ac_count`/`nfr_categories` from `strategy_file_path` and calls the validators directly:
+4. Compute interface coverage, AC/NFR citation validity, bidirectional scope coverage, and
+   actionability evidence deterministically (not as LLM judgments). [`scripts/build_citation_inputs.py`](../../scripts/build_citation_inputs.py)
+   derives `ac_count`/`nfr_categories` from `strategy_file_path` and calls the validators:
 
    ```bash
    gate_result=$(cd "$repo_root" && uv run python scripts/build_citation_inputs.py <feature_dir> --strategy-file "$strategy_file_path") || {
@@ -91,9 +98,24 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
    actionability_result=$(printf '%s\n' "$gate_result" | jq -c '.actionability_result')
    ```
 
-   A nonzero exit means gate-input construction itself failed (unreadable strategy file, a parsing bug) — that's an execution failure, not data about the test plan, so stop rather than silently falling back to degraded mode. With the pre-create-cases guards, `valid: true` is expected before test cases exist — both Section 9.2 (Test Cases column blank) and Section 6.2 are recognized as not-yet-populated and skipped. Once Section 6.2 is populated, `missing_e2e_or_ui_in_6_2` identifies declared, non-pending interfaces with a populated row that lacks both a `TC-E2E-*` and a `TC-UI-*` reference; each populated row must contain at least one `TC-E2E-*` or `TC-UI-*` reference. `missing_in_6_2` continues to identify absent or blank/placeholder interface rows. The actionability payload's `valid` field reflects only blocking evidence (`bare_tbd` and `missing_details`); `advisory_gaps` records missing or vague versions and incomplete test-data examples for visibility. Pass both kinds of actionability evidence to the score agent. Section 3.1 must contain substantive environment/configuration evidence; a heading or vague/unavailable-only statement remains blocking even when it is non-empty. The validator applies the same occurrence-level TBD classifier to Sections 3.1, 3.2, and 3.3: a grounded `TBD — Resolution: ...` path is allowed, including `derive` from a named overlay requirement, but a bare or unresolved TBD remains blocking. RBAC evidence must identify a role, permissions, and a concrete resource; `all`/`any`/`every` collections and wildcard resources are not concrete. Examples count only in explicit example labels/table columns or `e.g.,`/`for example` clauses.
+   On nonzero exit, stop: gate-input construction failed (for example, unreadable strategy or parser
+   bug), which is an execution failure, not plan data. Never fall back to degraded mode. Before
+   create-cases, `valid: true` is expected: blank Section 9.2 Test Cases and unpopulated Section 6.2
+   are skipped. Once Section 6.2 is populated, each populated row needs a `TC-E2E-*` or `TC-UI-*`
+   reference. `missing_e2e_or_ui_in_6_2` identifies declared non-pending interfaces with populated
+   rows lacking either reference;
+   `missing_in_6_2` identifies absent, blank, or placeholder rows. Actionability `valid` covers only
+   blocking `bare_tbd`/`missing_details`; `advisory_gaps` records missing/vague versions and
+   incomplete test-data examples. Pass both to the score agent. Section 3.1 needs substantive
+   environment/configuration evidence; headings and vague/unavailable-only statements block. The
+   same occurrence-level TBD classifier applies to Sections 3.1–3.3: grounded
+   `TBD — Resolution: ...`, including `derive` from a named overlay, is allowed; bare/unresolved TBD
+   blocks. RBAC needs a role, permissions, and concrete resource (`all`/`any`/`every` collections and
+   wildcard resources are not concrete). Count examples only in explicit example labels/table
+   columns or `e.g.`/`for example` clauses.
 
-5. Resolve `additional_docs` from TestPlan.md frontmatter deterministically — path validation and file reading happen in Python, not in the LLM prompt. The script reads frontmatter itself (the LLM is not in the trust path for path resolution):
+5. Have Python read TestPlan.md frontmatter, validate `additional_docs` paths, and read those files;
+   never trust the LLM to resolve paths:
 
    ```bash
    additional_docs_raw=$(cd "$repo_root" && uv run python scripts/resolve_additional_docs.py <feature_dir>) || {
@@ -105,11 +127,10 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
    additional_docs_result=$(printf '%s\n' "$additional_docs_raw" | jq -c '.docs')
    ```
 
-6. Run the deterministic scope and boilerplate checks. These flag out-of-scope test levels
-   (Section 2.1) and generic boilerplate language (Sections 1.3/2.3/8) without an LLM call —
-   results feed the SCOPE FIDELITY and SPECIFICITY rubric criteria in Step 2. Team-specific
-   pattern overrides are resolved from the TestPlan.md `components` frontmatter, mapped to
-   `COMPONENT_TEST_DIR_MAP` team names via `get_component_test_dir.py --teams-only`:
+6. Run deterministic scope (Section 2.1) and boilerplate (Sections 1.3/2.3/8) checks; results feed
+   SCOPE FIDELITY and SPECIFICITY without an LLM call. Resolve team pattern overrides from
+   TestPlan.md `components`, mapped to `COMPONENT_TEST_DIR_MAP` names by
+   `get_component_test_dir.py --teams-only`:
 
    ```bash
    team_list=$(cd "$repo_root" && uv run python scripts/get_component_test_dir.py --teams-only <feature_dir>) || {
@@ -133,16 +154,13 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
    }
    ```
 
-   `validate_test_scope.py`/`detect_boilerplate.py` always exit 0 by design (results are JSON,
-   not pass/fail signals) — a nonzero exit here means the script itself crashed (bad path,
-   malformed config), an execution failure worth stopping for, same treatment as the other
-   Step 1 scripts.
+   `validate_test_scope.py`/`detect_boilerplate.py` return JSON and always exit 0. Nonzero means a
+   script failure (such as bad path/config); stop as for other Step 1 execution failures.
 
 ### Step 2: Score (fork)
 
-Load calibration examples (fail closed — stop on nonzero exit). Adding a pair is dropping a
-file in `calibration/core/`, optional `calibration/ui/`, or `calibration/<team>/`; do not edit
-this skill for new examples.
+Load calibration examples and stop on nonzero exit. Add pairs under `calibration/core/`, optional
+`calibration/ui/`, or `calibration/<team>/`; do not edit this skill for examples.
 
 ```bash
 calibration_raw=$(cd "$repo_root" && uv run python scripts/load_calibration.py \
@@ -158,7 +176,9 @@ printf '%s\n' "$calibration_raw" | jq -r '.warnings[]?' >&2
 
 Read the score agent prompt from `${CLAUDE_SKILL_DIR}/prompts/score-agent.md`.
 
-Launch a **forked** score agent with these substitutions:
+Launch a **forked** score agent with these substitutions and omit the Agent
+`model` parameter so normal runtime resolution uses this review skill's active
+model:
 - `{FEATURE_DIR}` = feature directory path
 - `{TEST_PLAN_PATH}` = `<feature_dir>/TestPlan.md`
 - `{STRATEGY_FILE_PATH}` = `strategy_file_path` from Step 1
@@ -172,7 +192,7 @@ Launch a **forked** score agent with these substitutions:
 - `{SCOPE_CHECK_RESULT}` = JSON from Step 1 (`scope_check_result`)
 - `{BOILERPLATE_RESULT}` = JSON from Step 1 (`boilerplate_result`)
 
-The score agent evaluates the test plan against a 5-criterion rubric (specificity, grounding, scope fidelity, actionability, consistency) and returns a structured assessment with per-criterion scores and a grounding cross-reference table.
+The score agent returns rubric scores and a grounding cross-reference table.
 
 **Completeness checks performed by the score agent:**
 
@@ -200,13 +220,16 @@ The score agent evaluates the test plan against a 5-criterion rubric (specificit
 
 Read the review agent prompt from `${CLAUDE_SKILL_DIR}/prompts/review-agent.md`.
 
-Launch a **forked** review agent with these substitutions:
+Launch a **forked** review agent with these substitutions and omit the Agent
+`model` parameter so normal runtime resolution uses this review skill's active
+model:
 - `{CLAUDE_SKILL_DIR}` = `${CLAUDE_SKILL_DIR}` (the selected review skill directory)
 - `{FEATURE_DIR}` = feature directory path
 - `{ASSESSMENT_TEXT}` = full output from the score agent (Step 2)
 - `{FIRST_PASS}` = `true` (first assessment cycle)
 
-The review agent writes `<feature_dir>/TestPlanReview.md` with rubric scores, feedback, and validated frontmatter.
+The review agent writes rubric scores, feedback, and validated frontmatter to
+`<feature_dir>/TestPlanReview.md`.
 
 **Consistency checks performed by the review agent:**
 - Do the interfaces in Section 4 align with the scope in Section 1.2?
@@ -218,14 +241,13 @@ The review agent writes `<feature_dir>/TestPlanReview.md` with rubric scores, fe
 
 ### Step 3.5: Enforce Citation Gate
 
-Deterministically re-apply the Scope Fidelity/Specificity caps and Actionability correction the
-review agent was instructed to self-apply but might not have — `enforce_citation_gate.py` always
-exits 0 and reports outcome as JSON. Blocking Actionability evidence caps a recorded score above
-1 to 1/2; valid Actionability never raises a recorded 0/1. The `actionability_capped` result field
-is true only when that blocking cap changes the score.
+Reapply Scope Fidelity/Specificity caps and the Actionability correction deterministically.
+`enforce_citation_gate.py` always exits 0 and reports JSON: blocking evidence caps Actionability
+above 1 to 1/2; valid evidence never raises 0/1. `actionability_capped` is true only if the cap
+changes the score.
 
 ```bash
-repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 gate_result=$(cd "$repo_root" && uv run python scripts/enforce_citation_gate.py <feature_dir> \
     --ac-citations-result "$ac_citations_result" --ac-coverage-result "$ac_coverage_result" \
     --scope-check-result "$scope_check_result" --boilerplate-result "$boilerplate_result" \
@@ -242,23 +264,22 @@ case "$gate_status" in
 esac
 ```
 
-If `overridden`, Step 4 evaluates the corrected scores/feedback note, not the review agent's own numbers. Anything other than `overridden`/`ok`/`skip` means the gate itself failed to run — stop.
+If `overridden`, Step 4 uses corrected scores/feedback, not the agent's numbers. Any status besides
+`overridden`/`ok`/`skip` means gate failure; stop.
 
 ### Step 4: Check Criteria and Revise (max 2 cycles)
 
 After the review agent completes, read the review frontmatter:
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py read <feature_dir>/TestPlanReview.md)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py read <feature_dir>/TestPlanReview.md)
 ```
 
-If all five criteria in `scores.*` are `2`, proceed to Step 5 (done). This can be a Ready result
-even when `actionability_result.advisory_gaps` is non-empty; advisory actionability gaps are
-visible follow-up items, not revision failures.
+If all five `scores.*` are `2`, proceed to Step 5. The result can be Ready with non-empty
+`actionability_result.advisory_gaps`; these are visible follow-ups, not revision failures.
 
-If any criterion in `scores.*` is `< 2`, enter the revision loop. Do not enter it solely because
-`advisory_gaps` contains missing or vague OpenShift/RHOAI versions or incomplete test-data
-format/examples.
+If any `scores.*` is `< 2`, revise. Missing/vague OpenShift/RHOAI versions or incomplete test-data
+format/examples in `advisory_gaps` alone do not trigger revision.
 
 #### Revision Loop
 
@@ -267,7 +288,7 @@ Initialize cycle counter: `reassess_cycle=0`
 **4a. Filter for revision:**
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/filter_for_revision.py <feature_dir>)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/filter_for_revision.py <feature_dir>)
 ```
 
 If output is `SKIP`, stop the loop and proceed to Step 5.
@@ -276,7 +297,8 @@ If output is `SKIP`, stop the loop and proceed to Step 5.
 
 Read the revise agent prompt from `${CLAUDE_SKILL_DIR}/prompts/revise-agent.md`.
 
-Launch with substitutions:
+Launch with substitutions and omit the Agent `model` parameter so normal
+runtime resolution uses this review skill's active model:
 - `{CLAUDE_SKILL_DIR}` = `${CLAUDE_SKILL_DIR}` (the selected review skill directory)
 - `{FEATURE_DIR}` = feature directory path
 - `{STRATEGY_FILE_PATH}` = `strategy_file_path` from Step 1
@@ -287,17 +309,17 @@ The revise agent edits TestPlan.md (only sections mapped to failing criteria) an
 **4c. Check if reassessment is needed:**
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py read <feature_dir>/TestPlanReview.md)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py read <feature_dir>/TestPlanReview.md)
 ```
 
-If `auto_revised` is `false`, the revise agent found nothing to change — stop the loop.
+If `auto_revised` is `false`, stop; the revise agent found nothing to change.
 
 Increment `reassess_cycle`. If `reassess_cycle >= 2`, stop — max cycles reached. Proceed to Step 5.
 
 **4d. Save cumulative state:**
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preserve_review_state.py save <feature_dir>)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preserve_review_state.py save <feature_dir>)
 ```
 
 **4e. Re-score:**
@@ -307,10 +329,11 @@ Delete the existing review file to force a clean re-assessment:
 rm <feature_dir>/TestPlanReview.md
 ```
 
-Recompute validation results against the revised `TestPlan.md` — the revise agent (4b) may have edited Section 4, 6.2, 9.2, or citations, so all four must be refreshed before re-scoring:
+Recompute results against revised `TestPlan.md`; the revise agent may change Sections 4, 6.2, 9.2,
+or citations, so refresh all four before re-scoring:
 
 ```bash
-repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 gate_result=$(cd "$repo_root" && uv run python scripts/build_citation_inputs.py <feature_dir> --strategy-file "$strategy_file_path") || {
     echo "ERROR: scripts/build_citation_inputs.py failed — stopping review." >&2
     echo "$gate_result" >&2
@@ -352,27 +375,26 @@ boilerplate_result=$(cd "$repo_root" && uv run python scripts/detect_boilerplate
 }
 ```
 
-Repeat Step 2 (score agent) with the revised TestPlan.md and the recomputed results.
+Repeat Step 2 with revised TestPlan.md and recomputed results; omit Agent `model` as above.
 
-**4f. Re-review:**
+**4f. Re-review:** Omit the Agent `model` parameter as specified above.
 
-Repeat Step 3 (review agent) with `{FIRST_PASS}=false`, then repeat Step 3.5 (Enforce Citation Gate) against the recomputed results from 4e.
+Repeat Step 3 with `{FIRST_PASS}=false`, then Step 3.5 against the recomputed Step 4e results.
 
 **4g. Restore before_scores and revision history:**
 
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preserve_review_state.py restore <feature_dir>)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preserve_review_state.py restore <feature_dir>)
 ```
 
 **4h. Check criteria again:**
 
-Read the review frontmatter. If all criteria are now `2`, stop.
-If any criterion remains `< 2` and cycles remain, go back to 4a.
-If cycles are exhausted, stop and proceed to Step 5.
+Read review frontmatter. Stop if all criteria are `2`; return to 4a if any remain `< 2` and cycles
+remain. Otherwise proceed to Step 5.
 
 ### Step 5: Present Results
 
-`strategy_file_path` is the persistent snapshot — leave it in place for future re-review/re-score runs.
+Keep persistent `strategy_file_path` for future reviews and re-scores.
 
 Read the final review file and present a summary to the user:
 
@@ -409,7 +431,7 @@ Use `/test-plan-resolve-feedback <PR_URL>` to triage and apply PR feedback items
 
 ## Anti-hallucination Rules
 
-When reviewing and suggesting improvements, the score agent MUST follow these constraints:
+The score agent MUST follow these constraints when reviewing and suggesting improvements:
 
 **NEVER**:
 - Invent resolution paths for TBDs (e.g., "check version in ADR section 3" when no ADR exists or that section doesn't specify versions)
@@ -425,7 +447,8 @@ When reviewing and suggesting improvements, the score agent MUST follow these co
 - Defer to TestPlanGaps.md for unresolved items
 - Only suggest changes that are directly traceable to source material
 
-**Why these rules matter**: The reviewer's job is to assess completeness and consistency against source documents, not to fill gaps with assumptions. Inventing resolution paths or fabricating details creates false confidence - better to acknowledge gaps explicitly so they can be resolved with real documentation.
+These rules keep the review grounded in source documents: assess completeness and consistency, and
+acknowledge gaps instead of inventing resolution paths or details.
 
 ## What This Skill Does NOT Do
 

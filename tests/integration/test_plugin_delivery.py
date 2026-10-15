@@ -36,12 +36,36 @@ GIT_REPOSITORY_LOCATION_ENV_VARS = (
     "GIT_IMPLICIT_WORK_TREE",
     "GIT_PREFIX",
 )
+FULLSEND_POST_TEST_PLAN_HOOK = REPO_ROOT / ".fullsend" / "test-plan" / "post-test-plan.py"
+POST_HOOK_OLD_INDEX = (
+    "# Previous cases\n\n"
+    "- [TC-E2E-001](TC-E2E-001.md)\n"
+    "- [TC-E2E-002](./TC-E2E-002.md)\n"
+    "- [TC-E2E-777](../TC-E2E-777.md)\n"
+)
+POST_HOOK_NEW_INDEX = "# Current cases\n\n- [TC-E2E-001](TC-E2E-001.md)\n- [TC-E2E-003](./TC-E2E-003.md)\n"
+POST_HOOK_OLD_RETAINED_CASE = b"old retained case\n"
+POST_HOOK_UPDATED_RETAINED_CASE = b"updated retained case\n"
+POST_HOOK_OLD_REMOVED_CASE = b"old removed case\n"
+POST_HOOK_UNINDEXED_CASE = b"unindexed case-like file\n"
+POST_HOOK_NEW_CASE = b"new case\n"
+POST_HOOK_OUTSIDE_CASE = b"outside cases directory\n"
 LAYOUT_ENTRYPOINT_SKILLS = (
     "test-plan-case-implement",
     "test-plan-create-cases",
     "test-plan-create",
     "test-plan-generate-test-file",
     "test-plan-publish",
+    "test-plan-resolve-feedback",
+    "test-plan-review",
+    "test-plan-score",
+    "test-plan-update",
+)
+SKILL_PACKAGE_ROOT_SKILLS = (
+    "test-plan-case-implement",
+    "test-plan-create",
+    "test-plan-create-cases",
+    "test-plan-generate-test-file",
     "test-plan-resolve-feedback",
     "test-plan-review",
     "test-plan-score",
@@ -143,6 +167,31 @@ def _find_shell_block(document: Path, needle: str, skill_dir: Path | None = None
         if needle in block:
             return block
     raise AssertionError(f"No shell command block in {document} contains {needle!r}")
+
+
+def _package_root_cd(document: Path) -> str:
+    for block in _shell_blocks(document):
+        match = re.search(
+            r'cd(?: -P)?\s+"\$\{CLAUDE_SKILL_DIR\}/\.\./\.\."\s*&&\s*pwd -P',
+            block,
+        )
+        if match:
+            return match.group(0)
+    raise AssertionError(f"No package-root cd using CLAUDE_SKILL_DIR in {document}")
+
+
+def _skill_dir_for_delivery_layout(package_root: Path, skill_name: str, layout: str) -> Path:
+    skill_dir = package_root / "skills" / skill_name
+    skill_dir.mkdir(parents=True, exist_ok=True)
+    if layout == "direct-installed-version":
+        return skill_dir
+    if layout == "fullsend-skill-alias":
+        alias = package_root / ".claude" / "skills" / skill_name
+        alias.parent.mkdir(parents=True, exist_ok=True)
+        alias.symlink_to(Path("../../skills") / skill_name, target_is_directory=True)
+        return alias
+
+    raise AssertionError(f"Unsupported plugin delivery layout: {layout}")
 
 
 def _through_line(block: str, needle: str) -> str:
@@ -420,6 +469,45 @@ def test_documented_capture_failures_stop_execution(
     assert "COMPLETED" not in result.stdout
 
 
+@pytest.mark.parametrize(
+    "skill_name",
+    SKILL_PACKAGE_ROOT_SKILLS,
+)
+@pytest.mark.parametrize(
+    "layout",
+    [
+        pytest.param("direct-installed-version", id="direct-installed-version"),
+        pytest.param("fullsend-skill-alias", id="fullsend-skill-alias"),
+    ],
+)
+def test_skill_package_root_resolution_across_delivery_layouts(tmp_path: Path, skill_name: str, layout: str) -> None:
+    document = REPO_ROOT / "skills" / skill_name / "SKILL.md"
+    root_cd = _package_root_cd(document)
+    package_root = (
+        tmp_path / "direct plugin cache with spaces" / "test-plan" / "2.0.0"
+        if layout == "direct-installed-version"
+        else tmp_path / "fullsend checkout with spaces"
+    )
+    skill_dir = _skill_dir_for_delivery_layout(package_root, skill_name, layout)
+    environment = {
+        "PATH": os.environ.get("PATH", os.defpath),
+        "CLAUDE_SKILL_DIR": str(skill_dir),
+    }
+
+    result = _run_bash(
+        f"printf '%s\\n' \"$({root_cd})\"\n",
+        cwd=tmp_path,
+        env=environment,
+    )
+
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    selected_package_root = Path(result.stdout.strip())
+    assert selected_package_root == package_root.resolve(), (
+        f"{skill_name} selected {layout} resolved to {selected_package_root}, "
+        f"expected physical package root {package_root.resolve()}"
+    )
+
+
 def test_non_publishing_skill_shell_commands_do_not_discover_package_root_with_git() -> None:
     offenders = [
         f"{document.relative_to(REPO_ROOT)}: {match.group(0)}"
@@ -679,27 +767,32 @@ def test_documented_skill_commands_keep_plugin_and_output_roots(
 
 
 @pytest.mark.parametrize(
-    ("prompt_name", "launch_header", "command_marker"),
+    ("prompt_name", "command_marker"),
     [
         pytest.param(
             "review-agent.md",
-            "Launch a **forked** review agent with these substitutions:",
             "schema test-plan-review",
             id="review-agent",
         ),
         pytest.param(
             "revise-agent.md",
-            "Launch with substitutions:",
             "auto_revised=true",
             id="revise-agent",
         ),
     ],
 )
+@pytest.mark.parametrize(
+    "layout",
+    [
+        pytest.param("direct-installed-version", id="direct-installed-version"),
+        pytest.param("fullsend-skill-alias", id="fullsend-skill-alias"),
+    ],
+)
 def test_forked_review_prompts_resolve_helpers_after_explicit_skill_dir_substitution(
-    tmp_path: Path, prompt_name: str, launch_header: str, command_marker: str
+    tmp_path: Path, prompt_name: str, command_marker: str, layout: str
 ) -> None:
     plugin_root = _copy_tracked_checkout(REPO_ROOT, tmp_path / "plugin with spaces")
-    skill_dir = plugin_root / "skills" / "test-plan-review"
+    skill_dir = _skill_dir_for_delivery_layout(plugin_root, "test-plan-review", layout)
     caller = tmp_path / "unrelated caller"
     _make_caller(caller, with_git=False)
     prompt_file = skill_dir / "prompts" / prompt_name
@@ -719,9 +812,7 @@ def test_forked_review_prompts_resolve_helpers_after_explicit_skill_dir_substitu
     assert unresolved.returncode != 0, "A supporting prompt file must not receive implicit skill substitution"
 
     skill_text = (skill_dir / "SKILL.md").read_text(encoding="utf-8")
-    substitution_start = skill_text.index(launch_header) + len(launch_header)
-    substitution_section = skill_text[substitution_start:].split("\n\n", 1)[0]
-    declared_substitutions = set(re.findall(r"(?m)^- `?\{([A-Z0-9_]+)\}`? =", substitution_section))
+    declared_substitutions = set(re.findall(r"(?m)^\s*- `?\{([A-Z0-9_]+)\}`?\s*=", skill_text))
     substitutions = {
         "CLAUDE_SKILL_DIR": str(skill_dir),
         "FEATURE_DIR": str(feature_dir),
@@ -734,6 +825,9 @@ def test_forked_review_prompts_resolve_helpers_after_explicit_skill_dir_substitu
     resolved = _run_bash(resolved_command, cwd=caller, env=env)
     assert resolved.returncode == 0, f"stdout:\n{resolved.stdout}\nstderr:\n{resolved.stderr}"
     uv_calls = [json.loads(line) for line in Path(env["UV_CALL_LOG"]).read_text(encoding="utf-8").splitlines()]
+    assert Path(uv_calls[-1]["cwd"]).resolve() == plugin_root.resolve(), (
+        "The substituted prompt command must run from the physical plugin root"
+    )
     assert Path(uv_calls[-1]["project_root"]).resolve() == plugin_root.resolve(), (
         "The substituted helper must run in the selected plugin's uv project from an unrelated caller"
     )
@@ -1013,3 +1107,67 @@ def test_documented_calibration_json_parses_in_common_shells(skill_name: str, sh
     assert result.returncode == 0, result.stderr
     assert result.stdout == "CALIBRATION=first line\nsecond line\n"
     assert result.stderr == "warning\ncontinued\n"
+
+
+def _invoke_fullsend_post_test_plan_hook(tmp_path: Path) -> Path:
+    output_base = tmp_path / "host output"
+    iteration_output = output_base / "sandbox" / "iteration-1" / "output"
+    iteration_output.mkdir(parents=True)
+    repo_dir = tmp_path / "downloaded workspace"
+    source_feature = repo_dir / "plans" / "example_feature"
+    source_feature.mkdir(parents=True)
+    (iteration_output / "agent-result.json").write_text(
+        json.dumps({"feature_dir": "plans/example_feature"}),
+        encoding="utf-8",
+    )
+    for name, content in {
+        "TestPlanReview.md": "# Review\nValid review.\n",
+        ".source-strategy.md": "# Strategy\nValid strategy.\n",
+        "TestPlan.md": "# Test plan\nValid plan.\n",
+        "README.md": "# Feature\nValid feature README.\n",
+        ".test-plan-output-dir.json": json.dumps({"output_dir": str(source_feature.parent)}),
+    }.items():
+        (source_feature / name).write_text(content, encoding="utf-8")
+
+    source_cases = source_feature / "test_cases"
+    source_cases.mkdir()
+    (source_cases / "INDEX.md").write_text(POST_HOOK_NEW_INDEX, encoding="utf-8")
+    (source_cases / "TC-E2E-001.md").write_bytes(POST_HOOK_UPDATED_RETAINED_CASE)
+    (source_cases / "TC-E2E-003.md").write_bytes(POST_HOOK_NEW_CASE)
+
+    target_feature = output_base / "plans" / "example_feature"
+    target_cases = target_feature / "test_cases"
+    target_cases.mkdir(parents=True)
+    (target_cases / "INDEX.md").write_text(POST_HOOK_OLD_INDEX, encoding="utf-8")
+    (target_cases / "TC-E2E-001.md").write_bytes(POST_HOOK_OLD_RETAINED_CASE)
+    (target_cases / "TC-E2E-002.md").write_bytes(POST_HOOK_OLD_REMOVED_CASE)
+
+    (target_cases / "TC-E2E-999.md").write_bytes(POST_HOOK_UNINDEXED_CASE)
+    (target_feature / "TC-E2E-777.md").write_bytes(POST_HOOK_OUTSIDE_CASE)
+
+    environment = {
+        "FULLSEND_VALIDATED_ITERATION_DIR": str(iteration_output),
+        "REPO_DIR": str(repo_dir),
+        "FULLSEND_TASK": "/test-plan-create-cases RHAISTRAT-123",
+    }
+    result = subprocess.run(
+        [sys.executable, str(FULLSEND_POST_TEST_PLAN_HOOK)],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    return target_cases
+
+
+def test_post_test_plan_cases_handoff_reconciles_indexed_cases_safely(tmp_path: Path) -> None:
+    target_cases = _invoke_fullsend_post_test_plan_hook(tmp_path)
+
+    assert (target_cases / "INDEX.md").read_bytes() == POST_HOOK_NEW_INDEX.encode()
+    assert (target_cases / "TC-E2E-001.md").read_bytes() == POST_HOOK_UPDATED_RETAINED_CASE
+    assert (target_cases / "TC-E2E-003.md").read_bytes() == POST_HOOK_NEW_CASE
+    assert not (target_cases / "TC-E2E-002.md").exists(), "An obsolete indexed case must be removed"
+    assert (target_cases / "TC-E2E-999.md").read_bytes() == POST_HOOK_UNINDEXED_CASE
+    assert (target_cases.parent / "TC-E2E-777.md").read_bytes() == POST_HOOK_OUTSIDE_CASE

@@ -1,0 +1,16 @@
+---
+id: jira
+display_name: Jira
+description: Jira access for test-plan generation
+category: data
+endpoints:
+  - host: "redhat.atlassian.net"
+    port: 443
+    protocol: rest
+    enforcement: enforce
+    access: read-write
+binaries:
+  - path: "**/python"
+  - path: "**/python*"
+  - path: "**/python3"
+  - path: "**/curl"

@@ -8,6 +8,12 @@ import pytest
 from scripts.add_jira_labels import main, rubric_label_for_verdict
 
 
+@pytest.fixture(autouse=True)
+def isolate_test_plan_dry_run_env(monkeypatch):
+    """Keep ambient dry-run configuration from changing unrelated test behavior."""
+    monkeypatch.delenv("TEST_PLAN_DRY_RUN", raising=False)
+
+
 class TestRubricLabelForVerdict:
     """Tests for rubric_label_for_verdict() pure function."""
 
@@ -48,6 +54,10 @@ class TestMain:
             ),
         ],
     )
+    @pytest.mark.parametrize(
+        "dry_run_value",
+        [pytest.param(None, id="flag_unset"), pytest.param("false", id="flag_false")],
+    )
     @patch("scripts.add_jira_labels.add_labels")
     def test_main_label_assembly(
         self,
@@ -59,7 +69,12 @@ class TestMain:
         expected_labels,
         expected_remove,
         expected_stderr,
+        dry_run_value,
     ):
+        if dry_run_value is None:
+            monkeypatch.delenv("TEST_PLAN_DRY_RUN", raising=False)
+        else:
+            monkeypatch.setenv("TEST_PLAN_DRY_RUN", dry_run_value)
         monkeypatch.setattr("sys.argv", ["add_jira_labels.py", "RHAISTRAT-400", *extra_argv])
 
         exit_code = main()
@@ -68,6 +83,48 @@ class TestMain:
         mock_add_labels.assert_called_once_with("RHAISTRAT-400", expected_labels, remove=expected_remove)
         if expected_stderr is not None:
             assert expected_stderr in capsys.readouterr().err
+
+    @pytest.mark.parametrize(
+        "extra_argv",
+        [
+            pytest.param(["--verdict", "Ready", "test-plan-auto-revised"], id="verdict-and-literal"),
+            pytest.param(["test-plan-rubric-pass", "test-plan-auto-created"], id="literal-rubric-label"),
+            pytest.param(["custom-label"], id="literal-label"),
+        ],
+    )
+    @patch("scripts.add_jira_labels.add_labels")
+    def test_main_dry_run_skips_valid_requests(self, mock_add_labels, monkeypatch, capsys, extra_argv):
+        monkeypatch.setenv("TEST_PLAN_DRY_RUN", "true")
+        monkeypatch.setattr("sys.argv", ["add_jira_labels.py", "RHAISTRAT-400", *extra_argv])
+
+        assert main() == 0
+
+        mock_add_labels.assert_not_called()
+        assert json.loads(capsys.readouterr().out)["status"] == "skipped"
+
+    @pytest.mark.parametrize(
+        "extra_argv,expected_error",
+        [
+            pytest.param([], "no_labels_to_add", id="no-labels"),
+            pytest.param(["--verdict", "Bogus"], "invalid_verdict", id="invalid-verdict"),
+            pytest.param(
+                ["--verdict", "Ready", "test-plan-rubric-fail"],
+                "conflicting_rubric_labels",
+                id="conflicting-rubric-labels",
+            ),
+        ],
+    )
+    @patch("scripts.add_jira_labels.add_labels")
+    def test_main_dry_run_still_rejects_invalid_requests(
+        self, mock_add_labels, monkeypatch, capsys, extra_argv, expected_error
+    ):
+        monkeypatch.setenv("TEST_PLAN_DRY_RUN", "true")
+        monkeypatch.setattr("sys.argv", ["add_jira_labels.py", "RHAISTRAT-400", *extra_argv])
+
+        assert main() == 1
+
+        mock_add_labels.assert_not_called()
+        assert json.loads(capsys.readouterr().out) == {"status": "error", "error": expected_error}
 
     @patch("scripts.add_jira_labels.add_labels")
     def test_main_changed_verdict_removes_stale_rubric_label(self, mock_add_labels, monkeypatch):

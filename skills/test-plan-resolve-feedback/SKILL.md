@@ -44,7 +44,7 @@ If no PR URL is provided, ask the user for it via AskUserQuestion.
 Install the test-plan package (makes all scripts importable):
 ```bash
 bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap.sh" --layout "${CLAUDE_SKILL_DIR}" || exit 1
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
 ```
 
 If installation fails, inform the user and do NOT proceed. Once installed, all Python scripts will work from any directory.
@@ -65,12 +65,12 @@ Parse repo name from `<owner>/<repo>`.
 
 **Check if repo exists locally**:
 ```bash
-repo_path=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find "<repo_name>")
+repo_path=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find "<repo_name>")
 ```
 
 If found (exit code 0, prints path):
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py safe-checkout "$repo_path" "<head_branch>")
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py safe-checkout "$repo_path" "<head_branch>")
 ```
 - Set `repo_path` to the output
 - Log: "✓ Using local clone: $repo_path (updated)"
@@ -78,7 +78,7 @@ If found (exit code 0, prints path):
 If NOT found (exit code 1, empty output):
 - Clone the repo:
   ```bash
-  repo_path=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py clone "<repo_url>" "~/Code/<repo_name>")
+  repo_path=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py clone "<repo_url>" "~/Code/<repo_name>")
   ```
 - Checkout PR branch:
   ```bash
@@ -98,14 +98,14 @@ If multiple feature directories are found, ask the user which one to use via Ask
 #### 0.6 Validate frontmatter
 Validate the TestPlan.md frontmatter. If validation fails, show the errors — these will need to be fixed as part of the feedback resolution.
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py validate <feature_dir>/TestPlan.md)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py validate <feature_dir>/TestPlan.md)
 ```
 
 ### Step 1: Collect Review Comments
 
 1. Fetch all review comments (conversation + inline, bots filtered):
    ```bash
-   comments_json=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py pr-comments "<owner>/<repo>" <PR_NUMBER>)
+   comments_json=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py pr-comments "<owner>/<repo>" <PR_NUMBER>)
    ```
 
    The script returns a JSON array of comments, each with `author`, `body`, `type` (conversation/review/inline), and optional `path`/`line` for inline comments. Bot comments are already filtered.
@@ -159,7 +159,7 @@ For each accepted feedback item, apply the change:
 - Use the Edit tool to modify `TestPlan.md`, `TestPlanGaps.md`, or `test_cases/TC-*.md`
 - For frontmatter changes, ensure validation:
   ```bash
-  (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlan.md <field>=<value>)
+  (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlan.md <field>=<value>)
   ```
 - If a change affects test cases:
   - Update existing `TC-*.md` files to reflect the feedback
@@ -176,7 +176,7 @@ After all changes are applied:
 
 1. Bump the `version` patch number (e.g., `1.0.0` → `1.0.1`):
    ```bash
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/version.py bump <feature_dir>/TestPlan.md patch)
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/version.py bump <feature_dir>/TestPlan.md patch)
    ```
    The script outputs JSON with `old_version` and `new_version`.
 
@@ -184,7 +184,7 @@ After all changes are applied:
 
 3. If gaps were resolved by the feedback, update `TestPlanGaps.md`:
    ```bash
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlanGaps.md gap_count=<new_count>)
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py set <feature_dir>/TestPlanGaps.md gap_count=<new_count>)
    ```
    If all gaps resolved, set `status=Resolved`.
 
@@ -192,7 +192,7 @@ After all changes are applied:
 
 Run unified validation on all artifacts:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/validate.py all <feature_dir>)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/validate.py all <feature_dir>)
 ```
 
 If any validation fails, fix the issue before proceeding.
@@ -217,7 +217,7 @@ If any validation fails, fix the issue before proceeding.
    ```bash
    feature_name=$(basename "$feature_dir")
    repo_root=$(git -C "$feature_dir" rev-parse --show-toplevel)
-   if ! publish_result=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py publish-artifacts "$repo_root" "$feature_name" "test-plan(<source_key>): <short summary of changes> (PR #<PR_NUMBER>)"); then
+   if ! publish_result=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py publish-artifacts "$repo_root" "$feature_name" "test-plan(<source_key>): <short summary of changes> (PR #<PR_NUMBER>)"); then
        echo "ERROR: publish-artifacts failed"; exit 1
    fi
    ```

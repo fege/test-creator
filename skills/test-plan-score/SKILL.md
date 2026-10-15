@@ -38,7 +38,7 @@ Parse `$ARGUMENTS` to extract:
 Install the test-plan package (makes all scripts importable):
 ```bash
 bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap.sh" --layout "${CLAUDE_SKILL_DIR}" || exit 1
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
 ```
 
 If installation fails, inform the user and do NOT proceed. Once installed, all Python scripts will work from any directory.
@@ -48,7 +48,7 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
 1. Read `<feature_dir>/TestPlan.md`
 2. Read frontmatter to extract `source_key`:
    ```bash
-   source_key=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+   source_key=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
                 uv run python scripts/frontmatter.py read <feature_dir>/TestPlan.md source_key)
    ```
 3. Resolve the source strategy via the shared resolver — snapshot-primary: reads
@@ -56,7 +56,7 @@ If installation fails, inform the user and do NOT proceed. Once installed, all P
    from Jira and saves it there for next time. No degraded mode: if neither is available, this is
    a hard failure.
    ```bash
-   repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+   repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
    resolve_result=$(cd "$repo_root" && uv run python scripts/resolve_strategy.py <feature_dir> "$source_key")
    resolve_exit=$?
 
@@ -187,7 +187,7 @@ Write the five rubric scores from the Score Table as a JSON object (use `scope_f
 Then pass to the deterministic validator:
 
 ```bash
-repo_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 scores_json='{"specificity": N, "grounding": N, "scope_fidelity": N, "actionability": N, "consistency": N}'
 cap_result=$(cd "$repo_root" && uv run python scripts/cap_scope_fidelity.py \
     --scores-json "$scores_json" \

@@ -1,0 +1,42 @@
+---
+agent: test-plan/prompt.md
+role: test-plan
+model: claude-opus-4-6
+image: ghcr.io/fullsend-ai/fullsend-sandbox@sha256:259605fea321353552fdefd3a6a55e8b5c260998dfc5a622ed143e41a429995a
+timeout_minutes: 90
+
+host_files:
+  - src: test-plan/gcp-vertex.env
+    dest: /sandbox/workspace/.env.d/gcp-vertex.env
+    expand: true
+  - src: ${GOOGLE_APPLICATION_CREDENTIALS}
+    dest: /tmp/.gcp-credentials.json
+
+env:
+  sandbox:
+    FULLSEND_TASK: "${FULLSEND_TASK}"
+    JIRA_URL: "${JIRA_URL}"
+    JIRA_USER: "${JIRA_USER}"
+    CLAUDE_NON_INTERACTIVE: "true"
+  runner:
+    FULLSEND_TASK: "${FULLSEND_TASK}"
+    JIRA_URL: ${JIRA_URL}
+    JIRA_USER: ${JIRA_USER}
+    JIRA_TOKEN: ${JIRA_TOKEN}
+
+openshell:
+  profiles:
+    - test-plan/jira-profile.yaml
+    - https://raw.githubusercontent.com/fullsend-ai/agents/11dd3ad15ab5033fd04661d7faf6f7af45548d2f/profiles/fullsend-vertex-ai.yaml#sha256=71ea4699ec497d4b9592220adf7588019eb8445dbc77af8e0e6767e68dcb5585
+providers:
+  - test-plan/jira-provider.yaml
+  - https://raw.githubusercontent.com/fullsend-ai/agents/11dd3ad15ab5033fd04661d7faf6f7af45548d2f/providers/vertex-ai.yaml#sha256=ae5ebe527e5d7b0fa6994346fde3f6ba11b632a3ba78ece96591b5ed85083ec1
+
+pre_script: test-plan/pre-test-plan.sh
+post_script: test-plan/post-test-plan.py
+
+validation_loop:
+  preflight_check: 'python3 -c "import jsonschema"'
+  script: test-plan/validate-output-schema.sh
+  schema: test-plan/result.schema.json
+  max_iterations: 1

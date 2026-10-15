@@ -60,7 +60,7 @@ If the first argument is missing or starts with `--`, fail with usage error show
 Install the test-plan package (makes all scripts importable):
 ```bash
 bash "${CLAUDE_SKILL_DIR}/../../scripts/bootstrap.sh" --layout "${CLAUDE_SKILL_DIR}" || exit 1
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv sync --extra dev)
 ```
 
 If installation fails, inform the user and do NOT proceed.
@@ -73,7 +73,7 @@ If no feature source provided or first arg starts with `--`, exit with the error
 
 If feature source is a GitHub branch or PR URL:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "<feature_source>")
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py locate-feature-dir "<feature_source>")
 ```
 
 Extract `feature_dir` from the JSON result.
@@ -84,7 +84,7 @@ If feature source is a local path, use it directly as `feature_dir`.
 
 Run unified preflight validation and detection:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preflight.py "$feature_dir")
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/preflight.py "$feature_dir")
 ```
 
 The script returns JSON with:
@@ -105,7 +105,7 @@ context, conventions, or pattern guides — so an all-implemented / all-UI run e
 without that work:
 
 ```bash
-skill_root=$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
+skill_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
 
 # Extract --test-cases value (returns space-separated TC IDs or empty string)
 tc_arg=$(cd "$skill_root" && uv run python scripts/parse_skill_args.py --test-cases "$ARGUMENTS")
@@ -170,7 +170,7 @@ Handle user choice.
 Get and validate target repo (parses --target-repo from arguments, defaults to opendatahub-io/opendatahub-tests):
 
 ```bash
-target_repo=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+target_repo=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/validate_target_repo.py "$ARGUMENTS")
 ```
 
@@ -181,7 +181,7 @@ If validation fails, the script exits with error.
 
 Find target repo locally:
 ```bash
-target_repo_path=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find-target "$target_repo")
+target_repo_path=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find-target "$target_repo")
 ```
 
 If not found (exit code 1), ask user to clone or specify path. Local clone paths from Step 0.4 are accepted as-is.
@@ -193,7 +193,7 @@ If not found (exit code 1), ask user to clone or specify path. Local clone paths
 #### 1.0 Load odh-test-context for the target repository
 
 ```bash
-context_json=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+context_json=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/load_test_context.py "$target_repo" "$odh_test_context_path" "$feature_dir")
 ```
 
@@ -215,7 +215,7 @@ Set `test_context` and `use_odh_context` from the JSON. Do not call
 Get framework from target repository context:
 
 ```bash
-framework=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+framework=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/get_framework.py "$target_repo" "$odh_test_context_path")
 ```
 
@@ -232,7 +232,7 @@ Extract and format conventions as markdown:
 # Extract repo name from org/repo or local path (e.g., opendatahub-io/opendatahub-tests -> opendatahub-tests)
 target_repo_name=$(basename "${target_repo%/}")
 
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/extract_and_format_conventions.py "$feature_dir" "$target_repo_name" "$odh_test_context_path") > "$feature_dir/.test_implementation_conventions.md"
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/extract_and_format_conventions.py "$feature_dir" "$target_repo_name" "$odh_test_context_path") > "$feature_dir/.test_implementation_conventions.md"
 ```
 
 The script:
@@ -259,7 +259,7 @@ Store: `conventions` (dict or markdown content, or None if not available)
 
 Load repo instructions and pattern guides from TARGET repository (where tests will be written):
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/load_pattern_guides.py "$target_repo_path" "$framework")
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/load_pattern_guides.py "$target_repo_path" "$framework")
 ```
 
 Returns JSON with:
@@ -273,7 +273,7 @@ Returns JSON with:
 
 1. Locate Tiger Team:
    ```bash
-   (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find-known tiger-team)
+   (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py find-known tiger-team)
    ```
 2. If found: Invoke `/test-rules-generator <target_repo_path>` to generate guides for the target repository
 3. If not found: Ask user to clone Tiger Team or proceed without guides
@@ -300,7 +300,7 @@ If container recipe NOT available:
 
 Use `be_test_cases` from Step 0.2b. Parse those files into structured data:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/parse_test_cases.py "$feature_dir" ${be_test_cases[@]})
 ```
 
@@ -319,7 +319,7 @@ This `test_cases` array will be passed to the sub-agent in Step 4.
 Map **all** TestPlan.md frontmatter components to a test directory in the target repo:
 
 ```bash
-test_dir=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+test_dir=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/get_component_test_dir.py "$feature_dir" "$target_repo_path")
 ```
 
@@ -331,7 +331,7 @@ test_dir=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
 Then look for or create a package named after TestPlan.md `feature` under that directory:
 
 ```bash
-test_dir=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+test_dir=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/ensure_feature_test_dir.py "$feature_dir" "$target_repo_path" "$test_dir")
 feature_name=$(basename "$test_dir")
 ```
@@ -354,7 +354,7 @@ Set `strategy` variable based on determination above.
 
 Call the script to generate file mapping:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/map_test_files.py \
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/map_test_files.py \
     "$feature_dir" "$strategy" "$test_dir" \
     --feature-name "$feature_name" \
     --tc-ids "$(echo ${be_test_cases[@]} | tr ' ' ',')")
@@ -382,7 +382,7 @@ Present the mapping table to user.
 
 Identify common setup requirements across the TCs being implemented:
 ```bash
-(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
   uv run python scripts/analyze_common_setup.py "$feature_dir" ${be_test_cases[@]})
 ```
 
@@ -537,7 +537,7 @@ Build updates array from sub-agent results (ONLY for successfully implemented TC
 Update frontmatter in bulk:
 ```bash
 # updates.json: [{"tc_id": "TC-NEG-001", "status": "Automated", "automation_status": "Complete", "automation_file": "...", "automation_function": "..."}]
-echo "$updates_json" | (cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/update_tc_frontmatter.py "$feature_dir" -)
+echo "$updates_json" | (cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/update_tc_frontmatter.py "$feature_dir" -)
 ```
 
 Returns JSON with `updated_count`, `updated_tcs`, `errors`. Show any errors to user.
@@ -546,7 +546,7 @@ If feature source is a GitHub branch, stage, commit, and push updated TC files:
 ```bash
 feature_name=$(basename "$feature_dir")
 repo_root=$(git -C "$feature_dir" rev-parse --show-toplevel)
-if ! publish_result=$(cd "$(cd "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py publish-artifacts "$repo_root" "$feature_name" "test-plan(<source_key>): mark TCs as implemented"); then
+if ! publish_result=$(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/repo.py publish-artifacts "$repo_root" "$feature_name" "test-plan(<source_key>): mark TCs as implemented"); then
     echo "ERROR: publish-artifacts failed"; exit 1
 fi
 git push origin <branch_name>

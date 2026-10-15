@@ -269,7 +269,7 @@ If the user declines, stop.
 
    # Get skill repo root
    skill_parent="${CLAUDE_SKILL_DIR}/../.."
-   skill_repo_root=$(cd "$skill_parent" && git rev-parse --show-toplevel 2>/dev/null || echo "")
+   skill_repo_root=$(cd -P "$skill_parent" && git rev-parse --show-toplevel 2>/dev/null || echo "")
 
    if [ -n "$current_repo" ] && [ -n "$skill_repo_root" ] && [ "$current_repo" = "$skill_repo_root" ]; then
        echo "⚠ Currently in skill repository, switching to publish directory"

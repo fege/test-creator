@@ -21,6 +21,7 @@ coverage.html
 *.env
 .env.*
 !.env.example
+!.fullsend/test-plan/gcp-vertex.env
 *.secret
 credentials.json
 token.json
@@ -44,6 +45,17 @@ kubeconfig
 */test_implementation_conventions.md
 */test_scores/
 
+# Fullsend fetched-resource cache and audit logs.
+/.fullsend/.fullsend-cache/
+
+# Local project-skill links prepared before a Fullsend run.
+# Fullsend uploads these target-repository links even though Git ignores them.
+/.claude/skills/test-plan-create
+/.claude/skills/test-plan-create-cases
+/.claude/skills/test-plan.analyze.endpoints
+/.claude/skills/test-plan.analyze.infra
+/.claude/skills/test-plan.analyze.risks
+/.claude/skills/test-plan.review
 /.claude/
 /.plans/
 /.planning/

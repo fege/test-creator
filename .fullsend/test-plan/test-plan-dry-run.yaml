@@ -1,0 +1,15 @@
+base: test-plan.yaml
+agent: test-plan/prompt-dry-run.md
+
+host_files:
+  - src: test-plan/prompt.md
+    dest: /sandbox/workspace/test-plan-prompt.md
+    expand: false
+
+env:
+  sandbox:
+    TEST_PLAN_DRY_RUN: "true"
+
+openshell:
+  profiles:
+    - test-plan/jira-read-only-profile.yaml
