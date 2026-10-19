@@ -2,7 +2,9 @@
 agent: test-plan/prompt.md
 role: test-plan
 policy: https://raw.githubusercontent.com/fullsend-ai/agents/2da538b8b62ad6d7b91c43d8cf139f4738cfbf51/policies/base.yaml#sha256=3ed634401d87a1327fffe5e266272d930321484ce8a91dfa5fe447d4f2e00470
-model: sonnet
+# Keep claude-opus-4-6 for now: the harness was evaluated on it. Move to
+# `sonnet` (Claude Sonnet 5.5) as soon as the Sonnet evaluation is done.
+model: claude-opus-4-6
 image: ghcr.io/fullsend-ai/fullsend-sandbox@sha256:259605fea321353552fdefd3a6a55e8b5c260998dfc5a622ed143e41a429995a
 timeout_minutes: 90
 
