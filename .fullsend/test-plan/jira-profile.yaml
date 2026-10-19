@@ -3,6 +3,11 @@ id: jira
 display_name: Jira
 description: Jira access for test-plan generation
 category: data
+credentials:
+  - name: api_token
+    description: Jira API token
+    env_vars: [JIRA_TOKEN]
+    required: true
 endpoints:
   - host: "redhat.atlassian.net"
     port: 443
@@ -10,7 +15,7 @@ endpoints:
     enforcement: enforce
     access: read-write
 binaries:
-  - path: "**/python"
-  - path: "**/python*"
-  - path: "**/python3"
-  - path: "**/curl"
+  - "**/python"
+  - "**/python*"
+  - "**/python3"
+  - "**/curl"
