@@ -1240,6 +1240,79 @@ None.
         _, body = read_frontmatter(review)
         assert "x |" in body  # the malformed cell is left as-is
 
+    def test_adversarial_whitespace_in_heading_is_linear(self, tmp_path):
+        layout = SCORE_TABLE_LAYOUT.replace("## Verdict", "## Verdict" + " " * 50_000 + "x").replace(
+            "## Revision History", "## a" + " " * 50_000 + "x\n\n## Revision History"
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        started = time.monotonic()
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        assert time.monotonic() - started < 5
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 1/2 |" in body
+
+    def test_revision_history_sub_headings_stay_protected(self, tmp_path):
+        history = (
+            "## Revision History\n\n### Cycle 1 Revision\n\n"
+            "**Total: 10/10 — Verdict: Ready**\n\n"
+            "| Criterion | Score |\n|---|---|\n| Scope Fidelity | 2/2 |\n| **Total** | **10/10** |\n"
+        )
+        layout = SCORE_TABLE_LAYOUT.replace("## Revision History\n\nInitial assessment\n", history)
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert body.endswith(history)
+        assert "| Scope Fidelity | 1/2 |" in body  # the live score table is still synced
+
+    def test_sibling_heading_after_revision_history_is_synced(self, tmp_path):
+        layout = SCORE_TABLE_LAYOUT.replace(
+            "## Revision History\n\nInitial assessment\n",
+            "## Revision History\n\n### Cycle 1 Revision\n\nInitial assessment\n\n"
+            "## Verdict\n\n**Ready.** The plan scores 10/10 and meets every Ready condition.\n",
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert body.rstrip().endswith("**Ready.** The plan scores 9/10 and meets every Ready condition.")
+
+    def test_table_without_trailing_pipes_is_synced(self, tmp_path):
+        layout = (
+            "# Review\n\n## Score Table\n\n| Criterion | Score\n|---|---\n"
+            "| Specificity | 2/2\n| Grounding | 2/2\n| Scope Fidelity | 2/2\n"
+            "| Actionability | 2/2\n| Consistency | 2/2\n| **Total** | **10/10**\n\n"
+            "## Revision History\n\nInitial assessment\n"
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 1/2\n" in body
+        assert "| Actionability | 2/2\n" in body
+        assert "| **Total** | **9/10**\n" in body
+        assert "10/10" not in body
+
+    def test_score_only_table_with_trailing_pipes_is_synced(self, tmp_path):
+        layout = (
+            "# Review\n\n## Score Table\n\n| Criterion | Score |\n|---|---|\n"
+            "| Specificity | 2/2 |\n| Grounding | 2/2 |\n| Scope Fidelity | 2/2 |\n"
+            "| Actionability | 2/2 |\n| Consistency | 2/2 |\n| **Total** | **10/10** |\n\n"
+            "## Revision History\n\nInitial assessment\n"
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "| **Total** | **9/10** |" in body
+
     def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
         layout = RUBRIC_SCORES_LAYOUT.replace(
             "## Revision History", "## Section-by-Section Feedback\n\nAll criteria passed.\n\n## Revision History"

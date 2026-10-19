@@ -51,7 +51,9 @@ CRITERION_LABELS = {
     "consistency": "Consistency",
 }
 
-_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+# Only the `#{1,6}\s+` prefix is matched by regex; the heading text is trimmed with str.strip() so that a
+# long internal whitespace run cannot cause quadratic backtracking.
+_HEADING_RE = re.compile(r"^(#{1,6})\s+")
 # Prose total line: "**Total: 10/10 — Verdict: Ready**". Character classes are kept disjoint so the
 # match cannot backtrack super-linearly on adversarial whitespace (no adjacent optional repeats).
 _PROSE_TOTAL_RE = re.compile(
@@ -199,6 +201,14 @@ def _build_feedback_note(
     return "\n".join(lines)
 
 
+def _parse_heading(line: str) -> tuple[int, str] | None:
+    """Return (depth, text) for a markdown heading line, or None when the line isn't a heading."""
+    match = _HEADING_RE.match(line)
+    if match is None:
+        return None
+    return len(match.group(1)), line[match.end() :].strip()
+
+
 def _split_row(line: str) -> list[str] | None:
     """Split a markdown table row into cells (index 0 is the text before the first pipe), or None
     when the line isn't a table row.
@@ -239,7 +249,7 @@ def _score_column(cells: list[str]) -> int | None:
     """Index of the awarded-score column when `cells` is a score-table header (first column
     "Criterion", some column named "Score"); otherwise None.
     """
-    if len(cells) < 4 or _cell_label(cells[1]) != "criterion":
+    if len(cells) < 3 or _cell_label(cells[1]) != "criterion":
         return None
     for idx, cell in enumerate(cells[2:], start=2):
         if _cell_label(cell) in ("score", "scores"):
@@ -251,7 +261,7 @@ def _sync_table_row(cells: list[str], score_col: int, changed: dict, score: int,
     """Rewrite the awarded-score cell of a criterion row the gate changed, or of the Total row.
     Returns the new row text, or None when the row needs no change.
     """
-    if score_col >= len(cells) - 1:
+    if score_col >= len(cells):
         return None
     label = _cell_label(cells[1])
     new_cell = None
@@ -293,19 +303,26 @@ def _sync_review_body(
         else None
     )
 
-    section = ""
+    # Depth of the Revision History heading being skipped; stays set through nested sub-headings
+    # (e.g. `### Cycle N Revision`) until a heading of equal or shallower depth.
+    protected_depth = None
     score_col = None
     verdict_opening_pending = False
     out = []
     for line in body.split("\n"):
-        heading = _HEADING_RE.match(line)
+        heading = _parse_heading(line)
         if heading:
-            section = heading.group(2).lower()
+            depth, text = heading
+            if protected_depth is not None and depth > protected_depth:
+                out.append(line)
+                continue
+            section = text.lower()
+            protected_depth = depth if "revision history" in section else None
             score_col = None
             verdict_opening_pending = section.startswith("verdict")
             out.append(line)
             continue
-        if "revision history" in section:
+        if protected_depth is not None:
             out.append(line)
             continue
 
@@ -341,12 +358,12 @@ def _score_section_end(body: str) -> int | None:
     offset = 0
     level = None
     for line in body.splitlines(keepends=True):
-        heading = _HEADING_RE.match(line.rstrip("\n"))
+        heading = _parse_heading(line.rstrip("\n"))
         if heading:
-            depth = len(heading.group(1))
+            depth, text = heading
             if level is not None and depth <= level:
                 return offset
-            if level is None and depth in (2, 3) and "score" in heading.group(2).lower():
+            if level is None and depth in (2, 3) and "score" in text.lower():
                 level = depth
         offset += len(line)
     return len(body) if level is not None else None
