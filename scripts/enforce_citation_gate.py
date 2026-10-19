@@ -7,7 +7,8 @@ scope_check_result.valid directly and cap Scope Fidelity to <= 1 when any is fal
 Actionability when blocking actionability evidence is present, and cap Specificity per
 boilerplate_result.total_violations — but LLM compliance with those instructions isn't guaranteed.
 This re-applies the same rules after TestPlanReview.md is written: overriding the recorded score
-when it's inconsistent with the already-computed results, and injecting a deterministic feedback
+(in the frontmatter and in the body's score table, total, and verdict text) when it's inconsistent
+with the already-computed results, and injecting a deterministic feedback
 note (which objectives are uncited/invalid, which AC numbers are missing, which Section 2.1
 levels are disallowed, which sections have boilerplate language, and which blocking actionability
 gaps remain) so the revise agent has something concrete to act on even if the review agent's own
@@ -29,16 +30,31 @@ Exit code 0 always; prints a JSON object to stdout with `status` one of "overrid
 import argparse
 import json
 import os
+import re
 import sys
 
 import yaml
 
 from scripts.utils.error_utils import exit_graceful
-from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
+from scripts.utils.frontmatter_utils import read_frontmatter_validated, write_frontmatter_with_body
 from scripts.utils.schemas import REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
 from scripts.validate_quality_evidence import validate_actionability_result
 
 FEEDBACK_HEADING = "## Section-by-Section Feedback"
+
+# Human-readable criterion names as they appear in the first column of the review score table.
+CRITERION_LABELS = {
+    "specificity": "Specificity",
+    "grounding": "Grounding",
+    "scope_fidelity": "Scope Fidelity",
+    "actionability": "Actionability",
+    "consistency": "Consistency",
+}
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.*?)\s*$")
+# A score-table cell holding a single criterion score: "2/2", "**2/2**", or a bare "2".
+_SCORE_CELL_RE = re.compile(r"^(\s*\**\s*)([0-2])(\s*(?:/\s*2)?\s*\**\s*)$")
+_ANY_TOTAL_RE = re.compile(r"\b\d{1,2}(\s*/\s*10)\b")
 
 
 def _require_valid_field(result, name: str) -> None:
@@ -178,19 +194,102 @@ def _build_feedback_note(
     return "\n".join(lines)
 
 
-def _insert_feedback_note(review_path: str, note: str) -> None:
-    with open(review_path, encoding="utf-8") as f:
-        content = f.read()
+def _sync_criterion_row(line: str, changed: dict) -> str:
+    """Rewrite the score cell of a `| <Criterion> | <score> | ... |` table row whose criterion
+    score the gate changed. Rows that aren't criterion rows are returned unchanged.
+    """
+    if not changed or not line.lstrip().startswith("|"):
+        return line
+    cells = line.split("|")
+    if len(cells) < 4:
+        return line
+    label = cells[1].strip().strip("*").strip().lower()
+    for key, new_value in changed.items():
+        if label != CRITERION_LABELS[key].lower():
+            continue
+        match = _SCORE_CELL_RE.match(cells[2])
+        if match:
+            cells[2] = f"{match.group(1)}{new_value}{match.group(3)}"
+            return "|".join(cells)
+    return line
 
-    idx = content.find(FEEDBACK_HEADING)
-    if idx == -1:
-        return  # body doesn't match expected shape — frontmatter override still applies
 
-    insert_at = idx + len(FEEDBACK_HEADING)
-    content = content[:insert_at] + "\n\n" + note + content[insert_at:]
+def _sync_review_body(
+    body: str, old_scores: dict, old_score, old_verdict, scores: dict, score: int, verdict: str
+) -> str:
+    """Bring the human-readable score table, total, and verdict text in line with the corrected
+    frontmatter, so the review never shows two conflicting results.
 
-    with open(review_path, "w", encoding="utf-8") as f:
-        f.write(content)
+    Handles both the documented `## Rubric Scores` layout (`2/2` cells, `**Total: N/10 — Verdict:
+    X**`) and the `## Score Table` layout (bare or `N/2` cells, a `Total` row, verdict prose).
+    The Revision History section is a historical log and is left untouched.
+    """
+    changed = {k: v for k, v in scores.items() if k in CRITERION_LABELS and old_scores.get(k) != v}
+    score_changed = old_score != score
+    verdict_changed = isinstance(old_verdict, str) and old_verdict != verdict
+    old_total_re = re.compile(rf"\b{old_score}(\s*/\s*10)\b") if isinstance(old_score, int) else None
+    old_verdict_re = re.compile(rf"\b{re.escape(old_verdict)}\b") if verdict_changed else None
+
+    section = ""
+    out = []
+    for line in body.split("\n"):
+        heading = _HEADING_RE.match(line)
+        if heading:
+            section = heading.group(2).lower()
+            out.append(line)
+            continue
+        if "revision history" in section:
+            out.append(line)
+            continue
+
+        line = _sync_criterion_row(line, changed)
+        lowered = line.lower()
+        is_total_line = "total" in lowered
+        if score_changed:
+            if is_total_line:
+                line = _ANY_TOTAL_RE.sub(rf"{score}\g<1>", line)
+            elif old_total_re is not None:
+                line = old_total_re.sub(rf"{score}\g<1>", line)
+        if old_verdict_re is not None and ("verdict" in section or "verdict" in lowered or is_total_line):
+            line = old_verdict_re.sub(verdict, line)
+        out.append(line)
+    return "\n".join(out)
+
+
+def _score_section_end(body: str) -> int | None:
+    """Offset just past the section holding the score table (the first level-2/3 heading that
+    mentions "score"), or None when the body has no such heading.
+    """
+    offset = 0
+    level = None
+    for line in body.splitlines(keepends=True):
+        heading = _HEADING_RE.match(line.rstrip("\n"))
+        if heading:
+            depth = len(heading.group(1))
+            if level is not None and depth <= level:
+                return offset
+            if level is None and depth in (2, 3) and "score" in heading.group(2).lower():
+                level = depth
+        offset += len(line)
+    return len(body) if level is not None else None
+
+
+def _insert_feedback_note(body: str, note: str) -> str:
+    """Return `body` with the correction note under the feedback heading. When the review writer
+    omitted that heading, add it (right after the score section, or at the end of the body) so the
+    correction rationale is never silently dropped.
+    """
+    idx = body.find(FEEDBACK_HEADING)
+    if idx != -1:
+        insert_at = idx + len(FEEDBACK_HEADING)
+        return body[:insert_at] + "\n\n" + note + body[insert_at:]
+
+    section = f"{FEEDBACK_HEADING}\n\n{note}\n"
+    insert_at = _score_section_end(body)
+    if insert_at is None or insert_at == len(body):
+        prefix = body if body.endswith("\n") or not body else body + "\n"
+        return f"{prefix}\n{section}" if prefix else section
+    return body[:insert_at] + section + "\n" + body[insert_at:]
 
 
 def _validate_scores(scores: dict) -> None:
@@ -447,7 +546,7 @@ def enforce_citation_gate(
     if not os.path.exists(review_path):
         return None
 
-    data, _ = read_frontmatter_validated(review_path, "test-plan-review")
+    data, body = read_frontmatter_validated(review_path, "test-plan-review")
     old_score = data.get("score")
 
     result = apply_score_caps(
@@ -468,7 +567,7 @@ def enforce_citation_gate(
     specificity_capped = result["specificity_capped"]
     updates = {"scores": scores, "score": score, "pass": passed, "verdict": verdict}
 
-    # Built before update_frontmatter runs, deliberately: if this raises on a malformed result
+    # Built before anything is written, deliberately: if this raises on a malformed result
     # that somehow slipped past _require_valid_field, the frontmatter must not already be
     # written — a half-applied override (corrected score, no explanatory note) is worse than no
     # override at all.
@@ -498,8 +597,16 @@ def enforce_citation_gate(
                 before_scores["specificity"] = scores["specificity"]
             updates["before_scores"] = before_scores
 
-    update_frontmatter(review_path, updates, "test-plan-review")
-    _insert_feedback_note(review_path, note)
+    # The corrected body and frontmatter are assembled in memory and written in one atomic step, so
+    # the human-readable score table, total, and verdict never disagree with the frontmatter.
+    new_body = _sync_review_body(body, data.get("scores") or {}, old_score, data.get("verdict"), scores, score, verdict)
+    new_body = _insert_feedback_note(new_body, note)
+    merged = dict(data)
+    for key, value in updates.items():
+        merged[key] = (
+            {**merged[key], **value} if isinstance(value, dict) and isinstance(merged.get(key), dict) else value
+        )
+    write_frontmatter_with_body(review_path, new_body, merged, "test-plan-review")
 
     return {
         "overridden": True,

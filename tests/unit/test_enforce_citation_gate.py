@@ -980,8 +980,187 @@ class TestEnforceCitationGate:
         )
 
         assert result["overridden"] is True
-        data, _ = read_frontmatter(review)
+        data, body = read_frontmatter(review)
         assert data["scores"]["scope_fidelity"] == 1
+        # The correction rationale must not be silently dropped when the heading is absent.
+        assert "## Section-by-Section Feedback" in body
+        assert "Scope Fidelity was capped" in body
+
+
+RUBRIC_SCORES_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Rubric Scores
+
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Specificity | 2/2 | Tenant onboarding steps are feature-specific. |
+| Grounding | 2/2 | All Section 4 interfaces trace to the strategy. |
+| Scope Fidelity | 2/2 | Every objective cites an AC or NFR. |
+| Actionability | 2/2 | Environment, test data, and RBAC are concrete. |
+| Consistency | 2/2 | Scope, objectives, and coverage tables align. |
+
+**Total: 10/10 — Verdict: Ready**
+
+## Grounding Cross-Reference
+
+| Section 4 Entry | Source Match | Status |
+|-----------------|-------------|--------|
+| Tenant onboarding API | "Provider admins onboard tenants" | Grounded |
+
+## Revision History
+
+Initial assessment
+"""
+
+# Mirrors the RHAISTRAT-2930 review: `## Score Table`, a Total row, verdict prose, and no
+# `## Section-by-Section Feedback` heading.
+SCORE_TABLE_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence | Notes |
+|-----------|-------|----------|-------|
+| Specificity | 2/2 | Tenant quota and onboarding flows named. | Passes the swap test. |
+| Grounding | 2/2 | Interfaces trace to strategy sentences. | No fabrications. |
+| Scope Fidelity | 2/2 | All objectives carry AC/NFR citations. | No orphans. |
+| Actionability | 2/2 | Versions pinned, RBAC table present. | No blocking TBDs. |
+| Consistency | 2/2 | All seven cross-checks pass. | No mismatches. |
+| **Total** | **10/10** | | |
+
+## Verdict
+
+**Ready.** The plan scores 10/10 and meets every Ready condition.
+
+## Revision History
+
+Initial assessment
+"""
+
+INVALID_NFR_CITATIONS = {
+    "valid": False,
+    "total": 3,
+    "cited": 3,
+    "uncited": [],
+    "invalid_citations": [
+        {
+            "text": "3. Verify tenant isolation (NFR: Isolation — tenants cannot read each other's data)",
+            "line_number": 41,
+            "reasons": ["unknown_nfr_category"],
+        }
+    ],
+}
+
+REVIEW_LAYOUTS = pytest.mark.parametrize(
+    "layout", [RUBRIC_SCORES_LAYOUT, SCORE_TABLE_LAYOUT], ids=["rubric-scores", "score-table"]
+)
+
+
+class TestEnforceCitationGateSyncsReviewBody:
+    """A capped score must read the same in the frontmatter and in the human-readable review:
+    criterion row, total, and verdict text — for both the documented `## Rubric Scores` layout and
+    the `## Score Table` layout the RHAISTRAT-2930 review used.
+    """
+
+    @staticmethod
+    def _gate(tmp_path, citations=VALID_CITATIONS, boilerplate=VALID_BOILERPLATE, actionability=VALID_ACTIONABILITY):
+        return _enforce_citation_gate(
+            str(tmp_path),
+            citations,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            boilerplate,
+            actionability_result=actionability,
+        )
+
+    @REVIEW_LAYOUTS
+    def test_nfr_citation_cap_syncs_row_total_and_surfaces_note(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        data, body = read_frontmatter(review)
+        assert data["score"] == 9
+        assert data["scores"]["scope_fidelity"] == 1
+        assert data["verdict"] == "Ready"
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "| Specificity | 2/2 |" in body  # uncapped rows untouched
+        assert "9/10" in body
+        assert "10/10" not in body
+        assert "Ready" in body
+        # Correction note is present even though the layout has no feedback heading, and sits
+        # after the score table rather than after the Revision History.
+        assert body.count("## Section-by-Section Feedback") == 1
+        note_at = body.index("Scope Fidelity was capped")
+        assert body.index("Scope Fidelity | 1/2") < note_at < body.index("## Revision History")
+        assert "unknown_nfr_category" in body
+
+    @REVIEW_LAYOUTS
+    def test_verdict_change_rewrites_verdict_text(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        self._gate(tmp_path, actionability=INVALID_ACTIONABILITY)
+
+        data, body = read_frontmatter(review)
+        assert data["verdict"] == "Revise"
+        assert data["score"] == 9
+        assert "| Actionability | 1/2 |" in body
+        assert "9/10" in body
+        assert "10/10" not in body
+        assert "Revise" in body
+        assert "Ready" not in body
+
+    @REVIEW_LAYOUTS
+    def test_multiple_caps_sync_every_changed_row(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        self._gate(tmp_path, citations=INVALID_CITATIONS, boilerplate=BOILERPLATE_FIVE_VIOLATIONS)
+
+        data, body = read_frontmatter(review)
+        assert data["score"] == 7
+        assert data["verdict"] == "Rework"
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "| Specificity | 0/2 |" in body
+        assert "7/10" in body
+        assert "10/10" not in body
+        assert "Rework" in body
+        assert "Ready" not in body
+        assert "Scope Fidelity was capped" in body
+        assert "Specificity was capped" in body
+
+    def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
+        layout = RUBRIC_SCORES_LAYOUT.replace(
+            "## Revision History", "## Section-by-Section Feedback\n\nAll criteria passed.\n\n## Revision History"
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert body.count("## Section-by-Section Feedback") == 1
+        assert body.index("## Section-by-Section Feedback") < body.index("Scope Fidelity was capped")
+        assert "**Total: 9/10 — Verdict: Ready**" in body
+
+    def test_bare_score_cells_are_synced(self, tmp_path):
+        layout = SCORE_TABLE_LAYOUT.replace("| 2/2 |", "| 2 |")
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 1 |" in body
+        assert "| Grounding | 2 |" in body
+        assert "| **Total** | **9/10** |" in body
+        assert "10/10" not in body
+
+    @REVIEW_LAYOUTS
+    def test_no_cap_leaves_body_byte_identical(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+        original = Path(review).read_text()
+
+        result = self._gate(tmp_path)
+
+        assert result == {"overridden": False}
+        assert Path(review).read_text() == original
 
 
 class TestEnforceCitationGateFailsClosedOnMalformedResults:
