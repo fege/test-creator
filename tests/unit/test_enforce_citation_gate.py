@@ -5,6 +5,7 @@ citation/scope/boilerplate checks.
 
 import json
 import sys
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -1107,7 +1108,9 @@ class TestEnforceCitationGateSyncsReviewBody:
         assert "9/10" in body
         assert "10/10" not in body
         assert "Revise" in body
-        assert "Ready" not in body
+        # Only the assessment's own verdict is rewritten; "Ready" as an eligibility term stays.
+        assert "Verdict: Ready" not in body
+        assert "**Ready.**" not in body
 
     @REVIEW_LAYOUTS
     def test_multiple_caps_sync_every_changed_row(self, tmp_path, layout):
@@ -1123,9 +1126,119 @@ class TestEnforceCitationGateSyncsReviewBody:
         assert "7/10" in body
         assert "10/10" not in body
         assert "Rework" in body
-        assert "Ready" not in body
+        assert "Verdict: Ready" not in body
+        assert "**Ready.**" not in body
         assert "Scope Fidelity was capped" in body
         assert "Specificity was capped" in body
+
+    @REVIEW_LAYOUTS
+    def test_unrelated_mentions_are_preserved(self, tmp_path, layout):
+        """Evidence quotes with N/10 and verdict-eligibility wording are not assessment text."""
+        layout = layout.replace(
+            "## Revision History",
+            "## Evidence\n\nThe strategy requires a 10/10 success rate.\n"
+            "Actionability must be 2 to qualify as Ready.\n\n## Revision History",
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        self._gate(tmp_path, actionability=INVALID_ACTIONABILITY)
+
+        data, body = read_frontmatter(review)
+        assert data["verdict"] == "Revise"
+        assert "The strategy requires a 10/10 success rate." in body
+        assert "Actionability must be 2 to qualify as Ready." in body
+        assert "| Actionability | 1/2 |" in body
+
+    def test_verdict_section_eligibility_reference_is_preserved(self, tmp_path):
+        layout = SCORE_TABLE_LAYOUT.replace(
+            "meets every Ready condition.",
+            "meets every Ready condition.\n\nActionability must be 2 to qualify as Ready.",
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        self._gate(tmp_path, actionability=INVALID_ACTIONABILITY)
+
+        _, body = read_frontmatter(review)
+        assert "**Revise.** The plan scores 9/10" in body
+        assert "Actionability must be 2 to qualify as Ready." in body
+
+    @pytest.mark.parametrize(
+        ("total_cell", "expected_cell"),
+        [("**10**", "**9**"), ("10", "9"), ("**10/10**", "**9/10**"), ("10/10", "9/10")],
+    )
+    def test_total_cell_is_synced_bare_or_with_denominator(self, tmp_path, total_cell, expected_cell):
+        layout = SCORE_TABLE_LAYOUT.replace("| **Total** | **10/10** |", f"| **Total** | {total_cell} |")
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert f"| **Total** | {expected_cell} |" in body
+
+    def test_score_column_is_taken_from_header(self, tmp_path):
+        layout = """# Review
+
+## Score Table
+
+| Criterion | Maximum | Score | Notes |
+|-----------|---------|-------|-------|
+| Specificity | 2 | 2 | Specific. |
+| Grounding | 2 | 2 | Grounded. |
+| Scope Fidelity | 2 | 2 | Cited. |
+| Actionability | 2 | 2 | Concrete. |
+| Consistency | 2 | 2 | Aligned. |
+| **Total** | 10 | **10** | |
+"""
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 2 | 1 | Cited. |" in body
+        assert "| Specificity | 2 | 2 |" in body
+        assert "| **Total** | 10 | **9** | |" in body
+
+    def test_tables_without_a_score_header_are_untouched(self, tmp_path):
+        layout = """# Review
+
+## Rubric Notes
+
+| Criterion | Weight |
+|-----------|--------|
+| Scope Fidelity | 2 |
+| Total | 10 |
+
+| Item | Score |
+|------|-------|
+| Scope Fidelity | 2 |
+| Total | 10 |
+
+## Section-by-Section Feedback
+
+None.
+"""
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 2 |" in body
+        assert "| Total | 10 |" in body
+        assert "| Scope Fidelity | 1 |" not in body
+        assert "| Total | 9 |" not in body
+
+    def test_adversarial_whitespace_in_score_cells_is_linear(self, tmp_path):
+        layout = SCORE_TABLE_LAYOUT.replace(
+            "| Scope Fidelity | 2/2 |", "| Scope Fidelity |2" + " " * 50_000 + "x |"
+        ).replace("**Ready.**", "Total:" + " " * 50_000 + "x\n\n**Ready.**")
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        started = time.monotonic()
+        self._gate(tmp_path, citations=INVALID_NFR_CITATIONS)
+
+        assert time.monotonic() - started < 5
+        _, body = read_frontmatter(review)
+        assert "x |" in body  # the malformed cell is left as-is
 
     def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
         layout = RUBRIC_SCORES_LAYOUT.replace(
