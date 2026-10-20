@@ -37,19 +37,10 @@ import yaml
 
 from scripts.utils.error_utils import exit_graceful
 from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
-from scripts.utils.schemas import REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
+from scripts.utils.schemas import CRITERION_LABELS, REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
 from scripts.validate_quality_evidence import validate_actionability_result
 
 FEEDBACK_HEADING = "## Section-by-Section Feedback"
-
-# Human-readable criterion names as they appear in the first column of the review score table.
-CRITERION_LABELS = {
-    "specificity": "Specificity",
-    "grounding": "Grounding",
-    "scope_fidelity": "Scope Fidelity",
-    "actionability": "Actionability",
-    "consistency": "Consistency",
-}
 
 # The score section of a review, in the two layouts the review writers produce: `## Rubric Scores`
 # (review-agent.md) and `## Score Table`. It runs up to the next level-2 heading.
