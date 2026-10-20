@@ -214,8 +214,8 @@ def _sync_verdict_section(
 ) -> str:
     """Rewrite only the awarded total and verdict word in a `## Verdict` section: the score named
     after a scoring word (`scores 10/10`, `Total: 10/10`) and the verdict word named after
-    `verdict` or leading a line (`**Ready** — ...`). Other `N/10` figures and eligibility wording (`must be 2 to qualify as Ready`) are
-    left alone.
+    `verdict` or leading a line (`**Ready** — ...`). Other `N/10` figures and eligibility wording
+    (`must be 2 to qualify as Ready`) are left alone.
     """
     if old_score != score:
         section = re.sub(
