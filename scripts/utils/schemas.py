@@ -299,6 +299,19 @@ REVIEW_CRITERIA = ("specificity", "grounding", "scope_fidelity", "actionability"
 Must stay in sync with ``scores`` sub-fields in ``SCHEMAS["test-plan-review"]`` above.
 """
 
+CRITERION_LABELS = {
+    "specificity": "Specificity",
+    "grounding": "Grounding",
+    "scope_fidelity": "Scope Fidelity",
+    "actionability": "Actionability",
+    "consistency": "Consistency",
+}
+"""Human-readable criterion names as they appear in the first column of the review score table.
+
+Must have exactly the same keys as ``REVIEW_CRITERIA`` — adding, removing, or renaming a criterion
+requires updating both (and the ``scores`` sub-fields in ``SCHEMAS["test-plan-review"]``).
+"""
+
 
 def compute_verdict_and_pass(scores: dict) -> tuple[str, int, bool]:
     """Single Python authority for the review verdict/pass formula.
