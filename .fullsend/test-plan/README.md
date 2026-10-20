@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-- Run from an `odh-test-gen` checkout with the Fullsend CLI and OpenShell configured.
+- Run from a `test-creator` checkout with the Fullsend CLI and OpenShell configured.
 - Install `jsonschema>=4.18` in the host Python environment.
 - Export `JIRA_URL`, `JIRA_USER`, and `JIRA_TOKEN`.
 - Export `ANTHROPIC_VERTEX_PROJECT_ID`, `GOOGLE_CLOUD_PROJECT`, `CLOUD_ML_REGION`, and `GOOGLE_APPLICATION_CREDENTIALS`.

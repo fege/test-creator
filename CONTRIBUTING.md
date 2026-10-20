@@ -17,7 +17,7 @@ end-to-end test planning for RHOAI — see the [README](README.md) for the skill
 git clone git@github.com:fullsend-ai/test-creator.git
 cd test-creator
 uv sync --extra dev
-pre-commit install
+uv run pre-commit install
 ```
 
 ## Everyday commands
@@ -95,7 +95,9 @@ This repository runs [fullsend](https://github.com/fullsend-ai/fullsend) agents:
   your direction — answer with `/fs-fix <instruction>` or push commits yourself.
 
 Commands require repository access: triage-level for `/fs-triage` and `/fs-review`,
-write-level for the rest.
+write-level for the rest — with one exception: the PR author can always use `/fs-fix-stop`
+on their own PR, so you can stop the fix agent touching your branch even without write
+access.
 
 ## Filing issues
 

@@ -420,7 +420,7 @@ scripts/
 ├── filter_for_revision.py # Decide whether a test plan review warrants revision
 ├── preserve_review_state.py # Save/restore cumulative review state across re-assessment cycles
 ├── add_jira_labels.py      # Add labels to Jira issues (CLI wrapper)
-├── utils/                  # Shared utilities
+└── utils/                  # Shared utilities
     ├── schemas.py          # Schema validation (test-plan, test-case, test-gaps, review)
     ├── frontmatter_utils.py # Frontmatter read/write operations
     ├── repo_utils.py       # Repository discovery and test context loading

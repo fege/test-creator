@@ -30,13 +30,15 @@ uv run pytest tests/unit/ -v        # unit tests only
 uv run pytest tests/unit/test_enforce_citation_gate.py -v                      # one file
 uv run pytest tests/unit/test_enforce_citation_gate.py::TestApplyScoreCaps -v  # one class
 uv run pytest tests/ -v --cov=scripts --cov-report=term-missing  # coverage (CI gate: 70%)
-pre-commit run --all-files          # ruff, flake8 (UUC/UFN), standard hooks
+uv run --extra dev pre-commit run --all-files   # ruff, flake8 (UUC/UFN), standard hooks
 make lint                           # skillsaw (SKILL.md files)
 make skillsaw-fix                   # auto-fix skillsaw issues
 ```
 
 This is the single canonical command reference — [CLAUDE.md](CLAUDE.md),
-[CONTRIBUTING.md](CONTRIBUTING.md), and the README link here instead of duplicating it.
+[CONTRIBUTING.md](CONTRIBUTING.md), and [README.md](README.md) link here instead of
+duplicating it. (`uv run --extra dev` is used deliberately: plain `uv run` syncs without
+optional extras, so `pre-commit` would be missing in a fresh clone.)
 
 CI runs tests on Python 3.14 with `--cov-fail-under=70`, plus pre-commit and skillsaw, on
 every PR (see [`.github/workflows/`](.github/workflows/)).
@@ -61,8 +63,8 @@ every PR (see [`.github/workflows/`](.github/workflows/)).
   and assert on the captured JSON. Group tests in `Test*` classes by the unit under test,
   following the separation in `tests/unit/test_enforce_citation_gate.py` (pure-function
   tests, persistence tests, and CLI tests as separate classes).
-- Prefer exact substring assertions (positive and negative) over re-parsing generated
-  documents in the test.
+- **Assertion style:** prefer exact substring assertions (positive and negative) over
+  re-parsing generated documents in the test.
 
 ## Code conventions
 

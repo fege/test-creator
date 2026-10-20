@@ -89,8 +89,7 @@ Test plan artifacts (TestPlan.md, TC-*.md files) are written to a separate direc
 
 ## Code Review Invariants
 
-These rules from `.coderabbit.yaml` apply to all contributions:
-- Scripts in `scripts/` must be fully deterministic — no LLM or AI API calls
-- Jira credentials must come from environment variables, GitHub auth through the `gh` CLI — never hardcoded
-- CLI entry points must return structured JSON errors (`{"status": "failed", "error": "..."}`)
-- SKILL.md files must not embed procedural logic — delegate to Python scripts
+The contribution rules — deterministic scripts with no LLM calls, credentials via
+environment variables, structured JSON errors, instruction-only SKILL.md files — are
+stated once in [AGENTS.md](AGENTS.md#code-conventions). Review-time enforcement and the
+per-path threat model live in [`.coderabbit.yaml`](.coderabbit.yaml).
