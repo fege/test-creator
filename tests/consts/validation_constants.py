@@ -665,3 +665,100 @@ OCCURRENCE_LEVEL_TBD_CASES = (
         ["GPU configuration", "Node selector"],
     ),
 )
+
+# TestPlanReview.md bodies in the two documented score layouts, all criteria 2/2 (10/10, Ready).
+REVIEW_RUBRIC_SCORES_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Rubric Scores
+
+| Criterion | Score | Notes |
+|-----------|-------|-------|
+| Specificity | 2/2 | Tenant onboarding steps are feature-specific. |
+| Grounding | 2/2 | All Section 4 interfaces trace to the strategy. |
+| Scope Fidelity | 2/2 | Every objective cites an AC or NFR. |
+| Actionability | 2/2 | Environment, test data, and RBAC are concrete. |
+| Consistency | 2/2 | Scope, objectives, and coverage tables align. |
+
+**Total: 10/10 — Verdict: Ready**
+
+## Grounding Cross-Reference
+
+| Section 4 Entry | Source Match | Status |
+|-----------------|-------------|--------|
+| Tenant onboarding API | "Provider admins onboard tenants" | Grounded |
+
+## Revision History
+
+Initial assessment
+"""
+
+# Mirrors the RHAISTRAT-2930 review: `## Score Table` with a Total row and no
+# `## Section-by-Section Feedback` heading.
+REVIEW_SCORE_TABLE_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence | Notes |
+|-----------|-------|----------|-------|
+| Specificity | 2/2 | Tenant quota and onboarding flows named. | Passes the swap test. |
+| Grounding | 2/2 | Interfaces trace to strategy sentences. | No fabrications. |
+| Scope Fidelity | 2/2 | All objectives carry AC/NFR citations. | No orphans. |
+| Actionability | 2/2 | Versions pinned, RBAC table present. | No blocking TBDs. |
+| Consistency | 2/2 | All seven cross-checks pass. | No mismatches. |
+| **Total** | **10/10** | | |
+
+**Total: 10/10 — Verdict: Ready**
+
+## Revision History
+
+Initial assessment
+"""
+
+# Bare numeric score cells (as in the calibration reviews) and a separate `## Verdict` section that
+# restates the awarded score and verdict next to eligibility wording that must not change.
+REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence |
+|-----------|-------|----------|
+| Specificity | 2 | Tenant quota and onboarding flows named. |
+| Grounding | 2 | Interfaces trace to strategy sentences. |
+| Scope Fidelity | **2** | All objectives carry AC/NFR citations. |
+| Actionability | 2 | Versions pinned, RBAC table present. |
+| Consistency | 2 | All seven cross-checks pass. |
+| **Total** | **10** | |
+
+## Verdict
+
+The plan scores 10/10 and the verdict is **Ready**. The strategy requires a 10/10 success rate, and
+Actionability must be 2 to qualify as Ready.
+
+## Revision History
+
+Initial assessment
+"""
+
+# A `## Verdict` section that leads with the bolded verdict word, followed by the awarded score and
+# eligibility wording that must not change.
+REVIEW_LEADING_VERDICT_SECTION_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence |
+|-----------|-------|----------|
+| Specificity | 2/2 | Tenant quota and onboarding flows named. |
+| Grounding | 2/2 | Interfaces trace to strategy sentences. |
+| Scope Fidelity | 2/2 | All objectives carry AC/NFR citations. |
+| Actionability | 2/2 | Versions pinned, RBAC table present. |
+| Consistency | 2/2 | All seven cross-checks pass. |
+| **Total** | **10/10** | |
+
+## Verdict
+
+**Ready** — the plan scores 10/10. Actionability must be 2 to qualify as Ready.
+
+## Revision History
+
+Initial assessment
+"""

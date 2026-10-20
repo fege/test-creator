@@ -7,7 +7,8 @@ scope_check_result.valid directly and cap Scope Fidelity to <= 1 when any is fal
 Actionability when blocking actionability evidence is present, and cap Specificity per
 boilerplate_result.total_violations — but LLM compliance with those instructions isn't guaranteed.
 This re-applies the same rules after TestPlanReview.md is written: overriding the recorded score
-when it's inconsistent with the already-computed results, and injecting a deterministic feedback
+(in the frontmatter and in the body's score table, total, and verdict text) when it's inconsistent
+with the already-computed results, and injecting a deterministic feedback
 note (which objectives are uncited/invalid, which AC numbers are missing, which Section 2.1
 levels are disallowed, which sections have boilerplate language, and which blocking actionability
 gaps remain) so the revise agent has something concrete to act on even if the review agent's own
@@ -29,16 +30,24 @@ Exit code 0 always; prints a JSON object to stdout with `status` one of "overrid
 import argparse
 import json
 import os
+import re
 import sys
 
 import yaml
 
 from scripts.utils.error_utils import exit_graceful
 from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
-from scripts.utils.schemas import REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
+from scripts.utils.schemas import CRITERION_LABELS, REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
 from scripts.validate_quality_evidence import validate_actionability_result
 
 FEEDBACK_HEADING = "## Section-by-Section Feedback"
+
+# The score section of a review, in the two layouts the review writers produce: `## Rubric Scores`
+# (review-agent.md) and `## Score Table`. It runs up to the next level-2 heading.
+_SCORE_SECTION_RE = re.compile(r"^## (?:Rubric Scores|Score Table)[ \t]*$.*?(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+
+# A separate verdict section (e.g. the RHAISTRAT-2930 "Verdict" paragraph), up to the next level-2 heading.
+_VERDICT_SECTION_RE = re.compile(r"^## Verdict\b[^\n]*$.*?(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 
 
 def _require_valid_field(result, name: str) -> None:
@@ -178,19 +187,104 @@ def _build_feedback_note(
     return "\n".join(lines)
 
 
-def _insert_feedback_note(review_path: str, note: str) -> None:
-    with open(review_path, encoding="utf-8") as f:
-        content = f.read()
+def _sync_score_cell(section: str, row_label_pattern: str, old: int | str | None, new: int, suffix: str) -> str:
+    """Rewrite the score cell of the table row whose first cell is `row_label_pattern`. A cell is
+    matched as a whole — bare (`2`) or with its denominator (`2/2`), optionally bold — and its
+    formatting is kept. A trailing pipe is optional.
+    """
+    return re.sub(
+        rf"^(\|[ \t]*{row_label_pattern}[ \t]*\|[ \t]*)(\**){old}({re.escape(suffix)})?(\**)(?=[ \t]*(?:\||$))",
+        rf"\g<1>\g<2>{new}\g<3>\g<4>",
+        section,
+        flags=re.MULTILINE,
+    )
 
-    idx = content.find(FEEDBACK_HEADING)
-    if idx == -1:
-        return  # body doesn't match expected shape — frontmatter override still applies
 
-    insert_at = idx + len(FEEDBACK_HEADING)
-    content = content[:insert_at] + "\n\n" + note + content[insert_at:]
+def _sync_verdict_section(
+    section: str, old_score: int | None, old_verdict: str | None, score: int, verdict: str
+) -> str:
+    """Rewrite only the awarded total and verdict word in a `## Verdict` section: the score named
+    after a scoring word (`scores 10/10`, `Total: 10/10`) and the verdict word named after
+    `verdict` or leading a line (`**Ready** — ...`). Other `N/10` figures and eligibility wording
+    (`must be 2 to qualify as Ready`) are left alone.
+    """
+    if old_score != score:
+        section = re.sub(
+            rf"(\b(?:scores?|scored|totals?|awarded|rated)\b[^\n.]{{0,30}}?\b){old_score}/10\b",
+            rf"\g<1>{score}/10",
+            section,
+            flags=re.IGNORECASE,
+        )
+    if old_verdict and old_verdict != verdict:
+        section = re.sub(
+            rf"(\bverdict\b[^\n.]{{0,20}}?\**){re.escape(old_verdict)}\b",
+            rf"\g<1>{verdict}",
+            section,
+            flags=re.IGNORECASE,
+        )
+        # A verdict that leads its line: bolded (`**Ready** — ...`) or followed by a dash or colon
+        # (`Ready: ...`). A bare word that merely starts a wrapped line is not touched.
+        section = re.sub(
+            rf"^([ \t]*)(?:\*\*{re.escape(old_verdict)}\*\*|{re.escape(old_verdict)}(?=[ \t]*[—–:-]))",
+            lambda m: m.group(1) + (f"**{verdict}**" if m.group(0).endswith("**") else verdict),
+            section,
+            flags=re.MULTILINE,
+        )
+    return section
 
-    with open(review_path, "w", encoding="utf-8") as f:
-        f.write(content)
+
+def _sync_review_body(
+    body: str,
+    old_scores: dict,
+    old_score: int | None,
+    old_verdict: str | None,
+    scores: dict,
+    score: int,
+    verdict: str,
+) -> str:
+    """Bring the human-readable result of the review in line with the corrected frontmatter, so the
+    review never shows two conflicting results. The gate knows the exact old and new values, so this
+    is a set of targeted substitutions in two places only: the `## Rubric Scores` / `## Score Table`
+    section (the score cell of each changed criterion row, the Total row cell, and the
+    `Total: <old>/10 — Verdict: <old>` line) and a separate `## Verdict` section (the awarded score
+    and verdict word). Everything else, including eligibility wording and Revision History, is left
+    untouched.
+    """
+    match = _SCORE_SECTION_RE.search(body)
+    if match is not None:
+        section = match.group(0)
+        for key, label in CRITERION_LABELS.items():
+            if old_scores.get(key) != scores.get(key):
+                section = _sync_score_cell(section, label, old_scores.get(key), scores[key], "/2")
+        section = _sync_score_cell(section, r"\**Total\**", old_score, score, "/10")
+        section = section.replace(
+            f"Total: {old_score}/10 — Verdict: {old_verdict}", f"Total: {score}/10 — Verdict: {verdict}"
+        )
+        body = body[: match.start()] + section + body[match.end() :]
+    verdict_match = _VERDICT_SECTION_RE.search(body)
+    if verdict_match is not None:
+        section = _sync_verdict_section(verdict_match.group(0), old_score, old_verdict, score, verdict)
+        body = body[: verdict_match.start()] + section + body[verdict_match.end() :]
+    return body
+
+
+def _insert_feedback_note(body: str, note: str) -> str:
+    """Return `body` with the correction note under the feedback heading. When the review writer
+    omitted that heading, add it (right after the score section, or at the end of the body) so the
+    correction rationale is never silently dropped.
+    """
+    idx = body.find(FEEDBACK_HEADING)
+    if idx != -1:
+        insert_at = idx + len(FEEDBACK_HEADING)
+        return body[:insert_at] + "\n\n" + note + body[insert_at:]
+
+    section = f"{FEEDBACK_HEADING}\n\n{note}\n"
+    score_section = _SCORE_SECTION_RE.search(body)
+    if score_section is None or score_section.end() == len(body):
+        prefix = body if body.endswith("\n") or not body else body + "\n"
+        return f"{prefix}\n{section}" if prefix else section
+    insert_at = score_section.end()
+    return body[:insert_at] + section + "\n" + body[insert_at:]
 
 
 def _validate_scores(scores: dict) -> None:
@@ -447,7 +541,7 @@ def enforce_citation_gate(
     if not os.path.exists(review_path):
         return None
 
-    data, _ = read_frontmatter_validated(review_path, "test-plan-review")
+    data, body = read_frontmatter_validated(review_path, "test-plan-review")
     old_score = data.get("score")
 
     result = apply_score_caps(
@@ -468,7 +562,7 @@ def enforce_citation_gate(
     specificity_capped = result["specificity_capped"]
     updates = {"scores": scores, "score": score, "pass": passed, "verdict": verdict}
 
-    # Built before update_frontmatter runs, deliberately: if this raises on a malformed result
+    # Built before anything is written, deliberately: if this raises on a malformed result
     # that somehow slipped past _require_valid_field, the frontmatter must not already be
     # written — a half-applied override (corrected score, no explanatory note) is worse than no
     # override at all.
@@ -498,8 +592,11 @@ def enforce_citation_gate(
                 before_scores["specificity"] = scores["specificity"]
             updates["before_scores"] = before_scores
 
-    update_frontmatter(review_path, updates, "test-plan-review")
-    _insert_feedback_note(review_path, note)
+    # The corrected body and frontmatter are written in one atomic step, so the human-readable score
+    # table, total, and verdict never disagree with the frontmatter.
+    new_body = _sync_review_body(body, data.get("scores") or {}, old_score, data.get("verdict"), scores, score, verdict)
+    new_body = _insert_feedback_note(new_body, note)
+    update_frontmatter(review_path, updates, "test-plan-review", body=new_body)
 
     return {
         "overridden": True,

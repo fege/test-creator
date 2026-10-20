@@ -34,6 +34,10 @@ from tests.consts.validation_constants import (
     INVALID_SCOPE_COVERAGE,
     INVALID_SCOPE_COVERAGE_REVERSE,
     INVALID_SCOPE_CHECK,
+    REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+    REVIEW_LEADING_VERDICT_SECTION_LAYOUT,
+    REVIEW_RUBRIC_SCORES_LAYOUT,
+    REVIEW_SCORE_TABLE_LAYOUT,
     VALID_ACTIONABILITY,
     VALID_BOILERPLATE,
     VALID_CITATIONS,
@@ -980,8 +984,203 @@ class TestEnforceCitationGate:
         )
 
         assert result["overridden"] is True
-        data, _ = read_frontmatter(review)
+        data, body = read_frontmatter(review)
         assert data["scores"]["scope_fidelity"] == 1
+        # The correction rationale must not be silently dropped when the heading is absent.
+        assert "## Section-by-Section Feedback" in body
+        assert "Scope Fidelity was capped" in body
+
+
+LAYOUT_PARAMS = [
+    pytest.param(REVIEW_RUBRIC_SCORES_LAYOUT, id="rubric-scores"),
+    pytest.param(REVIEW_SCORE_TABLE_LAYOUT, id="score-table"),
+]
+
+
+class TestEnforceCitationGateSyncsReviewBody:
+    """A capped score must read the same in the frontmatter and in the score section of the review
+    (criterion row, Total row, and `Total: N/10 — Verdict: X` line), for both documented layouts.
+    """
+
+    @pytest.mark.parametrize("layout", LAYOUT_PARAMS)
+    def test_citation_cap_syncs_row_and_total_and_surfaces_note(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        data, body = read_frontmatter(review)
+        assert data["score"] == 9
+        assert data["scores"]["scope_fidelity"] == 1
+        assert data["verdict"] == "Ready"
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "| Specificity | 2/2 |" in body  # uncapped rows untouched
+        assert "Total: 9/10 — Verdict: Ready" in body
+        assert "10/10" not in body
+        # The note is present even though the layouts have no feedback heading, and sits after the
+        # score section rather than after the Revision History.
+        assert body.count("## Section-by-Section Feedback") == 1
+        assert (
+            body.index("Scope Fidelity | 1/2")
+            < body.index("Scope Fidelity was capped")
+            < body.index("## Revision History")
+        )
+
+    @pytest.mark.parametrize("layout", LAYOUT_PARAMS)
+    def test_verdict_change_rewrites_total_line(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
+        )
+
+        data, body = read_frontmatter(review)
+        assert data["verdict"] == "Revise"
+        assert "| Actionability | 1/2 |" in body
+        assert "Total: 9/10 — Verdict: Revise" in body
+        assert "Verdict: Ready" not in body
+
+    @pytest.mark.parametrize("layout", LAYOUT_PARAMS)
+    def test_multiple_caps_sync_every_changed_row(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        _enforce_citation_gate(
+            str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, BOILERPLATE_FIVE_VIOLATIONS
+        )
+
+        data, body = read_frontmatter(review)
+        assert data["score"] == 7
+        assert data["verdict"] == "Rework"
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "| Specificity | 0/2 |" in body
+        assert "Total: 7/10 — Verdict: Rework" in body
+        assert "10/10" not in body
+
+    @pytest.mark.parametrize("layout", LAYOUT_PARAMS)
+    def test_text_outside_score_section_is_preserved(self, tmp_path, layout):
+        layout = layout.replace(
+            "## Revision History",
+            "## Evidence\n\nThe strategy requires a 10/10 success rate.\n\n"
+            "## Revision History\n\n| Criterion | Score |\n|---|---|\n| Scope Fidelity | 2/2 |\n"
+            "| **Total** | **10/10** |\n\n**Total: 10/10 — Verdict: Ready**\n",
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", body=layout)
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | 1/2 |" in body
+        assert "The strategy requires a 10/10 success rate." in body
+        assert "| Scope Fidelity | 2/2 |\n| **Total** | **10/10** |\n\n**Total: 10/10 — Verdict: Ready**\n" in body
+
+    @pytest.mark.parametrize(
+        ("total_cell", "expected_cell"),
+        [pytest.param("10/10", "9/10", id="plain"), pytest.param("**10/10**", "**9/10**", id="bold")],
+    )
+    def test_total_row_cell_is_synced(self, tmp_path, total_cell, expected_cell):
+        layout = REVIEW_SCORE_TABLE_LAYOUT.replace("| **Total** | **10/10** |", f"| Total | {total_cell} |")
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        _, body = read_frontmatter(review)
+        assert f"| Total | {expected_cell} |" in body
+
+    def test_bare_score_cells_and_separate_verdict_section_are_synced(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | **1** |" in body  # bare bold cell keeps its formatting
+        assert "| Specificity | 2 |" in body
+        assert "| **Total** | **9** |" in body
+        assert "The plan scores 9/10 and the verdict is **Ready**." in body
+        # unrelated figures and eligibility wording are preserved
+        assert "requires a 10/10 success rate" in body
+        assert "must be 2 to qualify as Ready" in body
+
+    def test_verdict_change_rewrites_separate_verdict_section_only_where_current(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
+        )
+
+        _, body = read_frontmatter(review)
+        assert "The plan scores 9/10 and the verdict is **Revise**." in body
+        assert "must be 2 to qualify as Ready" in body
+        assert "| Actionability | 1 |" in body
+
+    def test_leading_bold_verdict_word_in_verdict_section_is_synced(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_LEADING_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
+        )
+
+        data, body = read_frontmatter(review)
+        assert data["verdict"] == "Revise"
+        assert "**Revise** — the plan scores 9/10." in body
+        assert "**Ready**" not in body
+        assert "must be 2 to qualify as Ready" in body
+
+    def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
+        layout = REVIEW_RUBRIC_SCORES_LAYOUT.replace(
+            "## Revision History", "## Section-by-Section Feedback\n\nAll criteria passed.\n\n## Revision History"
+        )
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        _, body = read_frontmatter(review)
+        assert body.count("## Section-by-Section Feedback") == 1
+        assert body.index("## Section-by-Section Feedback") < body.index("Scope Fidelity was capped")
+        assert "Total: 9/10 — Verdict: Ready" in body
+
+    @pytest.mark.parametrize("layout", LAYOUT_PARAMS)
+    def test_no_cap_leaves_body_byte_identical(self, tmp_path, layout):
+        review = _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, body=layout)
+        original = Path(review).read_text()
+
+        result = _enforce_citation_gate(
+            str(tmp_path), VALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE
+        )
+
+        assert result == {"overridden": False}
+        assert Path(review).read_text() == original
 
 
 class TestEnforceCitationGateFailsClosedOnMalformedResults:
