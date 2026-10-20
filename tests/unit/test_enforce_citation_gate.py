@@ -34,6 +34,7 @@ from tests.consts.validation_constants import (
     INVALID_SCOPE_COVERAGE,
     INVALID_SCOPE_COVERAGE_REVERSE,
     INVALID_SCOPE_CHECK,
+    REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
     REVIEW_RUBRIC_SCORES_LAYOUT,
     REVIEW_SCORE_TABLE_LAYOUT,
     VALID_ACTIONABILITY,
@@ -1087,6 +1088,49 @@ class TestEnforceCitationGateSyncsReviewBody:
 
         _, body = read_frontmatter(review)
         assert f"| Total | {expected_cell} |" in body
+
+    def test_bare_score_cells_and_separate_verdict_section_are_synced(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        _, body = read_frontmatter(review)
+        assert "| Scope Fidelity | **1** |" in body  # bare bold cell keeps its formatting
+        assert "| Specificity | 2 |" in body
+        assert "| **Total** | **9** |" in body
+        assert "The plan scores 9/10 and the verdict is **Ready**." in body
+        # unrelated figures and eligibility wording are preserved
+        assert "requires a 10/10 success rate" in body
+        assert "must be 2 to qualify as Ready" in body
+
+    def test_verdict_change_rewrites_separate_verdict_section_only_where_current(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
+        )
+
+        _, body = read_frontmatter(review)
+        assert "The plan scores 9/10 and the verdict is **Revise**." in body
+        assert "must be 2 to qualify as Ready" in body
+        assert "| Actionability | 1 |" in body
 
     def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
         layout = REVIEW_RUBRIC_SCORES_LAYOUT.replace(

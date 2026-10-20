@@ -713,3 +713,28 @@ REVIEW_SCORE_TABLE_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Ten
 
 Initial assessment
 """
+
+# Bare numeric score cells (as in the calibration reviews) and a separate `## Verdict` section that
+# restates the awarded score and verdict next to eligibility wording that must not change.
+REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence |
+|-----------|-------|----------|
+| Specificity | 2 | Tenant quota and onboarding flows named. |
+| Grounding | 2 | Interfaces trace to strategy sentences. |
+| Scope Fidelity | **2** | All objectives carry AC/NFR citations. |
+| Actionability | 2 | Versions pinned, RBAC table present. |
+| Consistency | 2 | All seven cross-checks pass. |
+| **Total** | **10** | |
+
+## Verdict
+
+The plan scores 10/10 and the verdict is **Ready**. The strategy requires a 10/10 success rate, and
+Actionability must be 2 to qualify as Ready.
+
+## Revision History
+
+Initial assessment
+"""

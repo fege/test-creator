@@ -55,6 +55,9 @@ CRITERION_LABELS = {
 # (review-agent.md) and `## Score Table`. It runs up to the next level-2 heading.
 _SCORE_SECTION_RE = re.compile(r"^## (?:Rubric Scores|Score Table)[ \t]*$.*?(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 
+# A separate verdict section (e.g. the RHAISTRAT-2930 "Verdict" paragraph), up to the next level-2 heading.
+_VERDICT_SECTION_RE = re.compile(r"^## Verdict\b[^\n]*$.*?(?=^## |\Z)", re.MULTILINE | re.DOTALL)
+
 
 def _require_valid_field(result, name: str) -> None:
     """Fail closed: reject anything that isn't a dict with a boolean `valid` field, and — for
@@ -193,29 +196,77 @@ def _build_feedback_note(
     return "\n".join(lines)
 
 
-def _sync_review_body(
-    body: str, old_scores: dict, old_score, old_verdict, scores: dict, score: int, verdict: str
+def _sync_score_cell(section: str, row_label_pattern: str, old: int | str | None, new: int, suffix: str) -> str:
+    """Rewrite the score cell of the table row whose first cell is `row_label_pattern`. A cell is
+    matched as a whole — bare (`2`) or with its denominator (`2/2`), optionally bold — and its
+    formatting is kept. A trailing pipe is optional.
+    """
+    return re.sub(
+        rf"^(\|[ \t]*{row_label_pattern}[ \t]*\|[ \t]*)(\**){old}({re.escape(suffix)})?(\**)(?=[ \t]*(?:\||$))",
+        rf"\g<1>\g<2>{new}\g<3>\g<4>",
+        section,
+        flags=re.MULTILINE,
+    )
+
+
+def _sync_verdict_section(
+    section: str, old_score: int | None, old_verdict: str | None, score: int, verdict: str
 ) -> str:
-    """Bring the score section of the review in line with the corrected frontmatter, so the review
-    never shows two conflicting results. The gate knows the exact old and new values, so this is a
-    set of targeted substitutions inside the `## Rubric Scores` / `## Score Table` section only:
-    the `| <Label> | <old>/2 |` row of each changed criterion, the Total row cell, and the
-    `Total: <old>/10 — Verdict: <old>` line. Everything outside that section is left untouched.
+    """Rewrite only the awarded total and verdict word in a `## Verdict` section: the score named
+    after a scoring word (`scores 10/10`, `Total: 10/10`) and the verdict word named after
+    `verdict`. Other `N/10` figures and eligibility wording (`must be 2 to qualify as Ready`) are
+    left alone.
+    """
+    if old_score != score:
+        section = re.sub(
+            rf"(\b(?:scores?|scored|totals?|awarded|rated)\b[^\n.]{{0,30}}?\b){old_score}/10\b",
+            rf"\g<1>{score}/10",
+            section,
+            flags=re.IGNORECASE,
+        )
+    if old_verdict and old_verdict != verdict:
+        section = re.sub(
+            rf"(\bverdict\b[^\n.]{{0,20}}?\**){re.escape(old_verdict)}\b",
+            rf"\g<1>{verdict}",
+            section,
+            flags=re.IGNORECASE,
+        )
+    return section
+
+
+def _sync_review_body(
+    body: str,
+    old_scores: dict,
+    old_score: int | None,
+    old_verdict: str | None,
+    scores: dict,
+    score: int,
+    verdict: str,
+) -> str:
+    """Bring the human-readable result of the review in line with the corrected frontmatter, so the
+    review never shows two conflicting results. The gate knows the exact old and new values, so this
+    is a set of targeted substitutions in two places only: the `## Rubric Scores` / `## Score Table`
+    section (the score cell of each changed criterion row, the Total row cell, and the
+    `Total: <old>/10 — Verdict: <old>` line) and a separate `## Verdict` section (the awarded score
+    and verdict word). Everything else, including eligibility wording and Revision History, is left
+    untouched.
     """
     match = _SCORE_SECTION_RE.search(body)
-    if match is None:
-        return body
-    section = match.group(0)
-    for key, label in CRITERION_LABELS.items():
-        if old_scores.get(key) != scores.get(key):
-            section = re.sub(
-                rf"(\|[ \t]*{label}[ \t]*\|[ \t]*){old_scores.get(key)}/2\b", rf"\g<1>{scores[key]}/2", section
-            )
-    section = re.sub(rf"(\|[ \t]*\**Total\**[ \t]*\|[ \t]*\**){old_score}/10", rf"\g<1>{score}/10", section)
-    section = section.replace(
-        f"Total: {old_score}/10 — Verdict: {old_verdict}", f"Total: {score}/10 — Verdict: {verdict}"
-    )
-    return body[: match.start()] + section + body[match.end() :]
+    if match is not None:
+        section = match.group(0)
+        for key, label in CRITERION_LABELS.items():
+            if old_scores.get(key) != scores.get(key):
+                section = _sync_score_cell(section, label, old_scores.get(key), scores[key], "/2")
+        section = _sync_score_cell(section, r"\**Total\**", old_score, score, "/10")
+        section = section.replace(
+            f"Total: {old_score}/10 — Verdict: {old_verdict}", f"Total: {score}/10 — Verdict: {verdict}"
+        )
+        body = body[: match.start()] + section + body[match.end() :]
+    verdict_match = _VERDICT_SECTION_RE.search(body)
+    if verdict_match is not None:
+        section = _sync_verdict_section(verdict_match.group(0), old_score, old_verdict, score, verdict)
+        body = body[: verdict_match.start()] + section + body[verdict_match.end() :]
+    return body
 
 
 def _insert_feedback_note(body: str, note: str) -> str:
