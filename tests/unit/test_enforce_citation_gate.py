@@ -35,6 +35,7 @@ from tests.consts.validation_constants import (
     INVALID_SCOPE_COVERAGE_REVERSE,
     INVALID_SCOPE_CHECK,
     REVIEW_BARE_CELLS_VERDICT_SECTION_LAYOUT,
+    REVIEW_LEADING_VERDICT_SECTION_LAYOUT,
     REVIEW_RUBRIC_SCORES_LAYOUT,
     REVIEW_SCORE_TABLE_LAYOUT,
     VALID_ACTIONABILITY,
@@ -1131,6 +1132,30 @@ class TestEnforceCitationGateSyncsReviewBody:
         assert "The plan scores 9/10 and the verdict is **Revise**." in body
         assert "must be 2 to qualify as Ready" in body
         assert "| Actionability | 1 |" in body
+
+    def test_leading_bold_verdict_word_in_verdict_section_is_synced(self, tmp_path):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            ALL_TWOS,
+            score=10,
+            verdict="Ready",
+            body=REVIEW_LEADING_VERDICT_SECTION_LAYOUT,
+        )
+
+        _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
+        )
+
+        data, body = read_frontmatter(review)
+        assert data["verdict"] == "Revise"
+        assert "**Revise** — the plan scores 9/10." in body
+        assert "**Ready**" not in body
+        assert "must be 2 to qualify as Ready" in body
 
     def test_existing_feedback_heading_receives_note_without_duplication(self, tmp_path):
         layout = REVIEW_RUBRIC_SCORES_LAYOUT.replace(

@@ -214,7 +214,7 @@ def _sync_verdict_section(
 ) -> str:
     """Rewrite only the awarded total and verdict word in a `## Verdict` section: the score named
     after a scoring word (`scores 10/10`, `Total: 10/10`) and the verdict word named after
-    `verdict`. Other `N/10` figures and eligibility wording (`must be 2 to qualify as Ready`) are
+    `verdict` or leading a line (`**Ready** — ...`). Other `N/10` figures and eligibility wording (`must be 2 to qualify as Ready`) are
     left alone.
     """
     if old_score != score:
@@ -230,6 +230,14 @@ def _sync_verdict_section(
             rf"\g<1>{verdict}",
             section,
             flags=re.IGNORECASE,
+        )
+        # A verdict that leads its line: bolded (`**Ready** — ...`) or followed by a dash or colon
+        # (`Ready: ...`). A bare word that merely starts a wrapped line is not touched.
+        section = re.sub(
+            rf"^([ \t]*)(?:\*\*{re.escape(old_verdict)}\*\*|{re.escape(old_verdict)}(?=[ \t]*[—–:-]))",
+            lambda m: m.group(1) + (f"**{verdict}**" if m.group(0).endswith("**") else verdict),
+            section,
+            flags=re.MULTILINE,
         )
     return section
 

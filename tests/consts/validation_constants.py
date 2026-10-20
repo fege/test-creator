@@ -738,3 +738,27 @@ Actionability must be 2 to qualify as Ready.
 
 Initial assessment
 """
+
+# A `## Verdict` section that leads with the bolded verdict word, followed by the awarded score and
+# eligibility wording that must not change.
+REVIEW_LEADING_VERDICT_SECTION_LAYOUT = """# Test Plan Review — AI Grid Provider Admin Tenant Onboarding
+
+## Score Table
+
+| Criterion | Score | Evidence |
+|-----------|-------|----------|
+| Specificity | 2/2 | Tenant quota and onboarding flows named. |
+| Grounding | 2/2 | Interfaces trace to strategy sentences. |
+| Scope Fidelity | 2/2 | All objectives carry AC/NFR citations. |
+| Actionability | 2/2 | Versions pinned, RBAC table present. |
+| Consistency | 2/2 | All seven cross-checks pass. |
+| **Total** | **10/10** | |
+
+## Verdict
+
+**Ready** — the plan scores 10/10. Actionability must be 2 to qualify as Ready.
+
+## Revision History
+
+Initial assessment
+"""
