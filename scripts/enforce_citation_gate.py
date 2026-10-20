@@ -36,7 +36,7 @@ import sys
 import yaml
 
 from scripts.utils.error_utils import exit_graceful
-from scripts.utils.frontmatter_utils import read_frontmatter_validated, write_frontmatter_with_body
+from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
 from scripts.utils.schemas import REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
 from scripts.validate_quality_evidence import validate_actionability_result
 
@@ -51,17 +51,9 @@ CRITERION_LABELS = {
     "consistency": "Consistency",
 }
 
-# Only the `#{1,6}\s+` prefix is matched by regex; the heading text is trimmed with str.strip() so that a
-# long internal whitespace run cannot cause quadratic backtracking.
-_HEADING_RE = re.compile(r"^(#{1,6})\s+")
-# Prose total line: "**Total: 10/10 — Verdict: Ready**". Character classes are kept disjoint so the
-# match cannot backtrack super-linearly on adversarial whitespace (no adjacent optional repeats).
-_PROSE_TOTAL_RE = re.compile(
-    r"(^[ \t]*(?:[-*][ \t]+)?(?:\*+[ \t]*)?Total[ \t]*:[ \t]*(?:\*+[ \t]*)?)(\d{1,2})([ \t]*/[ \t]*10\b)"
-)
-_PROSE_LABEL_RE = re.compile(r"^[ \t]*(?:[-*][ \t]+)?(?:\*+[ \t]*)?(?:Total|Verdict)\b")
-# Opening sentence of a Verdict section: "The plan scores 10/10 ...".
-_VERDICT_SCORES_RE = re.compile(r"(\bscores[ \t]+)(\d{1,2})([ \t]*/[ \t]*10\b)")
+# The score section of a review, in the two layouts the review writers produce: `## Rubric Scores`
+# (review-agent.md) and `## Score Table`. It runs up to the next level-2 heading.
+_SCORE_SECTION_RE = re.compile(r"^## (?:Rubric Scores|Score Table)[ \t]*$.*?(?=^## |\Z)", re.MULTILINE | re.DOTALL)
 
 
 def _require_valid_field(result, name: str) -> None:
@@ -201,172 +193,29 @@ def _build_feedback_note(
     return "\n".join(lines)
 
 
-def _parse_heading(line: str) -> tuple[int, str] | None:
-    """Return (depth, text) for a markdown heading line, or None when the line isn't a heading."""
-    match = _HEADING_RE.match(line)
-    if match is None:
-        return None
-    return len(match.group(1)), line[match.end() :].strip()
-
-
-def _split_row(line: str) -> list[str] | None:
-    """Split a markdown table row into cells (index 0 is the text before the first pipe), or None
-    when the line isn't a table row.
-    """
-    if not line.lstrip().startswith("|"):
-        return None
-    return line.split("|")
-
-
-def _cell_label(cell: str) -> str:
-    return cell.strip().strip("*").strip().lower()
-
-
-def _rewrite_score_cell(cell: str, new_value: int, denominator: int) -> str | None:
-    """Return `cell` with its score replaced by `new_value`, preserving emphasis markers and the
-    `/N` suffix when present. Returns None when the cell isn't a plain score ("2", "2/2", "**9/10**").
-    Uses deterministic trimming rather than a regex, so adversarial whitespace cannot cause
-    catastrophic backtracking.
-    """
-    stripped = cell.strip()
-    lead_ws = cell[: len(cell) - len(cell.lstrip())]
-    trail_ws = cell[len(cell.rstrip()) :]
-    core = stripped.lstrip("*")
-    left_marks = stripped[: len(stripped) - len(core)]
-    core = core.rstrip("*")
-    right_marks = stripped[len(left_marks) + len(core) :]
-    number, sep, rest = core.strip().partition("/")
-    number = number.strip()
-    if not (number.isascii() and number.isdigit()) or len(number) > 2:
-        return None
-    if sep and rest.strip() != str(denominator):
-        return None
-    new_core = f"{new_value}/{denominator}" if sep else str(new_value)
-    return f"{lead_ws}{left_marks}{new_core}{right_marks}{trail_ws}"
-
-
-def _score_column(cells: list[str]) -> int | None:
-    """Index of the awarded-score column when `cells` is a score-table header (first column
-    "Criterion", some column named "Score"); otherwise None.
-    """
-    if len(cells) < 3 or _cell_label(cells[1]) != "criterion":
-        return None
-    for idx, cell in enumerate(cells[2:], start=2):
-        if _cell_label(cell) in ("score", "scores"):
-            return idx
-    return None
-
-
-def _sync_table_row(cells: list[str], score_col: int, changed: dict, score: int, score_changed: bool) -> str | None:
-    """Rewrite the awarded-score cell of a criterion row the gate changed, or of the Total row.
-    Returns the new row text, or None when the row needs no change.
-    """
-    if score_col >= len(cells):
-        return None
-    label = _cell_label(cells[1])
-    new_cell = None
-    if label == "total" or label == "total score":
-        if score_changed:
-            new_cell = _rewrite_score_cell(cells[score_col], score, 10)
-    else:
-        for key, new_value in changed.items():
-            if label == CRITERION_LABELS[key].lower():
-                new_cell = _rewrite_score_cell(cells[score_col], new_value, 2)
-                break
-    if new_cell is None:
-        return None
-    return "|".join(cells[:score_col] + [new_cell] + cells[score_col + 1 :])
-
-
 def _sync_review_body(
     body: str, old_scores: dict, old_score, old_verdict, scores: dict, score: int, verdict: str
 ) -> str:
-    """Bring the human-readable score table, total, and verdict text in line with the corrected
-    frontmatter, so the review never shows two conflicting results.
-
-    Only identified assessment expressions are rewritten: awarded-score cells of a table whose
-    header is `Criterion | ... | Score` (criterion rows and the Total row, bare or `N/10`), a prose
-    `Total: N/10 — Verdict: X` line, and the opening sentence of a `## Verdict` section. Other
-    mentions of the same numbers or verdict words (evidence quotes, eligibility conditions) and
-    unrecognized tables are left untouched, as is the Revision History section.
+    """Bring the score section of the review in line with the corrected frontmatter, so the review
+    never shows two conflicting results. The gate knows the exact old and new values, so this is a
+    set of targeted substitutions inside the `## Rubric Scores` / `## Score Table` section only:
+    the `| <Label> | <old>/2 |` row of each changed criterion, the Total row cell, and the
+    `Total: <old>/10 — Verdict: <old>` line. Everything outside that section is left untouched.
     """
-    changed = {k: v for k, v in scores.items() if k in CRITERION_LABELS and old_scores.get(k) != v}
-    score_changed = old_score != score
-    verdict_changed = isinstance(old_verdict, str) and old_verdict != verdict
-    verdict_word = re.escape(old_verdict) if verdict_changed else None
-    prose_verdict_re = (
-        re.compile(rf"(\bVerdict\b\**[ \t]*:[ \t]*(?:\*+[ \t]*)?){verdict_word}\b") if verdict_changed else None
+    match = _SCORE_SECTION_RE.search(body)
+    if match is None:
+        return body
+    section = match.group(0)
+    for key, label in CRITERION_LABELS.items():
+        if old_scores.get(key) != scores.get(key):
+            section = re.sub(
+                rf"(\|[ \t]*{label}[ \t]*\|[ \t]*){old_scores.get(key)}/2\b", rf"\g<1>{scores[key]}/2", section
+            )
+    section = re.sub(rf"(\|[ \t]*\**Total\**[ \t]*\|[ \t]*\**){old_score}/10", rf"\g<1>{score}/10", section)
+    section = section.replace(
+        f"Total: {old_score}/10 — Verdict: {old_verdict}", f"Total: {score}/10 — Verdict: {verdict}"
     )
-    opening_verdict_re = (
-        re.compile(rf"^([ \t]*(?:\*+[ \t]*)?){verdict_word}(?=\**(?:[.:,]|[ \t]*[\u2014\u2013-]|[ \t]*$))")
-        if verdict_changed
-        else None
-    )
-
-    # Depth of the Revision History heading being skipped; stays set through nested sub-headings
-    # (e.g. `### Cycle N Revision`) until a heading of equal or shallower depth.
-    protected_depth = None
-    score_col = None
-    verdict_opening_pending = False
-    out = []
-    for line in body.split("\n"):
-        heading = _parse_heading(line)
-        if heading:
-            depth, text = heading
-            if protected_depth is not None and depth > protected_depth:
-                out.append(line)
-                continue
-            section = text.lower()
-            protected_depth = depth if "revision history" in section else None
-            score_col = None
-            verdict_opening_pending = section.startswith("verdict")
-            out.append(line)
-            continue
-        if protected_depth is not None:
-            out.append(line)
-            continue
-
-        cells = _split_row(line)
-        if cells is not None:
-            if score_col is None:
-                score_col = _score_column(cells)
-            elif (new_line := _sync_table_row(cells, score_col, changed, score, score_changed)) is not None:
-                line = new_line
-            out.append(line)
-            continue
-        score_col = None
-
-        if _PROSE_LABEL_RE.match(line):
-            if score_changed:
-                line = _PROSE_TOTAL_RE.sub(rf"\g<1>{score}\g<3>", line)
-            if prose_verdict_re is not None:
-                line = prose_verdict_re.sub(rf"\g<1>{verdict}", line)
-        elif verdict_opening_pending and line.strip():
-            verdict_opening_pending = False
-            if opening_verdict_re is not None:
-                line = opening_verdict_re.sub(rf"\g<1>{verdict}", line)
-            if score_changed:
-                line = _VERDICT_SCORES_RE.sub(rf"\g<1>{score}\g<3>", line)
-        out.append(line)
-    return "\n".join(out)
-
-
-def _score_section_end(body: str) -> int | None:
-    """Offset just past the section holding the score table (the first level-2/3 heading that
-    mentions "score"), or None when the body has no such heading.
-    """
-    offset = 0
-    level = None
-    for line in body.splitlines(keepends=True):
-        heading = _parse_heading(line.rstrip("\n"))
-        if heading:
-            depth, text = heading
-            if level is not None and depth <= level:
-                return offset
-            if level is None and depth in (2, 3) and "score" in text.lower():
-                level = depth
-        offset += len(line)
-    return len(body) if level is not None else None
+    return body[: match.start()] + section + body[match.end() :]
 
 
 def _insert_feedback_note(body: str, note: str) -> str:
@@ -380,10 +229,11 @@ def _insert_feedback_note(body: str, note: str) -> str:
         return body[:insert_at] + "\n\n" + note + body[insert_at:]
 
     section = f"{FEEDBACK_HEADING}\n\n{note}\n"
-    insert_at = _score_section_end(body)
-    if insert_at is None or insert_at == len(body):
+    score_section = _SCORE_SECTION_RE.search(body)
+    if score_section is None or score_section.end() == len(body):
         prefix = body if body.endswith("\n") or not body else body + "\n"
         return f"{prefix}\n{section}" if prefix else section
+    insert_at = score_section.end()
     return body[:insert_at] + section + "\n" + body[insert_at:]
 
 
@@ -692,16 +542,11 @@ def enforce_citation_gate(
                 before_scores["specificity"] = scores["specificity"]
             updates["before_scores"] = before_scores
 
-    # The corrected body and frontmatter are assembled in memory and written in one atomic step, so
-    # the human-readable score table, total, and verdict never disagree with the frontmatter.
+    # The corrected body and frontmatter are written in one atomic step, so the human-readable score
+    # table, total, and verdict never disagree with the frontmatter.
     new_body = _sync_review_body(body, data.get("scores") or {}, old_score, data.get("verdict"), scores, score, verdict)
     new_body = _insert_feedback_note(new_body, note)
-    merged = dict(data)
-    for key, value in updates.items():
-        merged[key] = (
-            {**merged[key], **value} if isinstance(value, dict) and isinstance(merged.get(key), dict) else value
-        )
-    write_frontmatter_with_body(review_path, new_body, merged, "test-plan-review")
+    update_frontmatter(review_path, updates, "test-plan-review", body=new_body)
 
     return {
         "overridden": True,

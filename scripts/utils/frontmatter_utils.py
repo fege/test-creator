@@ -145,7 +145,7 @@ def write_frontmatter_with_body(path, body, data, schema_type):
     return str(path)
 
 
-def update_frontmatter(path, updates, schema_type):
+def update_frontmatter(path, updates, schema_type, body=None):
     """Update specific frontmatter fields in an existing file.
 
     Reads existing frontmatter, merges updates (overwriting on conflict),
@@ -155,12 +155,16 @@ def update_frontmatter(path, updates, schema_type):
         path: file path (must exist)
         updates: dict of fields to add/update
         schema_type: schema to validate against
+        body: optional replacement body, written together with the merged frontmatter in the same
+            atomic write (default: keep the existing body)
 
     Raises:
         ValidationError: if merged data fails validation
         FileNotFoundError: if file doesn't exist
     """
-    data, body = read_frontmatter(path)
+    data, existing_body = read_frontmatter(path)
+    if body is None:
+        body = existing_body
     for key, value in updates.items():
         if isinstance(value, dict) and isinstance(data.get(key), dict):
             data[key].update(value)
