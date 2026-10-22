@@ -1078,6 +1078,51 @@ def test_documented_layout_is_shell_only_before_uv_sync(tmp_path: Path) -> None:
     assert {name: (caller / "scripts" / name).read_text(encoding="utf-8") for name in caller_scripts} == caller_scripts
 
 
+@pytest.mark.parametrize("skill_name", ["test-plan-create", "test-plan-create-cases"])
+@pytest.mark.parametrize("caller_location", ["output-dir", "feature-dir", "caller-workspace"])
+def test_documented_final_step_removes_runtime_alias_from_run_directory(
+    tmp_path: Path, skill_name: str, caller_location: str
+) -> None:
+    plugin_root = _copy_tracked_checkout(REPO_ROOT, tmp_path / "plugin")
+    skill_dir = plugin_root / "skills" / skill_name
+    skill_doc = skill_dir / "SKILL.md"
+    workspace = tmp_path / "workspace"
+    output_dir = workspace / "test-plans" / "RHAISTRAT" / "20261022-142300-RHAISTRAT-2980"
+    feature_dir = output_dir / "fixture_feature"
+    feature_dir.mkdir(parents=True)
+    (feature_dir / "TestPlan.md").write_text("# plan\n", encoding="utf-8")
+    caller = {"output-dir": output_dir, "feature-dir": feature_dir, "caller-workspace": workspace}[caller_location]
+
+    env = _command_environment(skill_dir, tmp_path)
+    env.pop("CLAUDE_SKILL_DIR")
+    bootstrap_block = _through_line(_find_shell_block(skill_doc, "scripts/bootstrap.sh", skill_dir), "bootstrap.sh")
+    bootstrap = _run_bash(bootstrap_block, cwd=caller, env=env)
+    assert bootstrap.returncode == 0, f"stdout:\n{bootstrap.stdout}\nstderr:\n{bootstrap.stderr}"
+    assert (caller / RUNTIME_ALIAS_NAME).resolve(strict=True) == plugin_root.resolve()
+
+    cleanup_block = _find_shell_block(skill_doc, "remove_runtime_alias.py", skill_dir)
+    cleanup_block = cleanup_block.replace("<absolute_path_to_output_dir>/<feature_name>", str(feature_dir))
+    env["feature_dir"] = str(feature_dir)
+    cleanup = _run_bash(cleanup_block, cwd=caller, env=env)
+    assert cleanup.returncode == 0, f"stdout:\n{cleanup.stdout}\nstderr:\n{cleanup.stderr}"
+    payload = json.loads(cleanup.stdout)
+
+    assert not _symlink_entries(output_dir), "The run directory must be symlink-free after the final step"
+    assert (feature_dir / "TestPlan.md").read_text(encoding="utf-8") == "# plan\n"
+    assert plugin_root.is_dir()
+    if caller_location == "caller-workspace":
+        assert payload["removed"] == []
+        assert (workspace / RUNTIME_ALIAS_NAME).resolve(strict=True) == plugin_root.resolve(), (
+            "A caller-workspace link outside the run directory is not the final step's concern"
+        )
+    else:
+        assert payload["removed"] == [str(caller / RUNTIME_ALIAS_NAME)]
+    calls = [json.loads(line) for line in Path(env["UV_CALL_LOG"]).read_text(encoding="utf-8").splitlines()]
+    cleanup_calls = [call for call in calls if "scripts/remove_runtime_alias.py" in call["arguments"]]
+    assert cleanup_calls
+    assert {Path(call["cwd"]).resolve() for call in cleanup_calls} == {plugin_root.resolve()}
+
+
 @pytest.mark.parametrize("skill_name", ["test-plan-review", "test-plan-score"])
 @pytest.mark.parametrize("shell_name", ["sh", "bash", "zsh"])
 def test_documented_calibration_json_parses_in_common_shells(skill_name: str, shell_name: str) -> None:
