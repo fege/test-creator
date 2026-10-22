@@ -112,9 +112,9 @@ each scored 0-2.
    ```
 4. Install the skill (if reviewing locally):
    ```bash
-   git clone https://github.com/opendatahub-io/odh-test-gen \
-       ~/ai/odh-test-gen
-   cd ~/ai/odh-test-gen && uv sync --extra dev
+   git clone https://github.com/fullsend-ai/test-creator \
+       ~/ai/test-creator
+   cd ~/ai/test-creator && uv sync --extra dev
    ```
 
 ## Workflow

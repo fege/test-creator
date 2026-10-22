@@ -5,8 +5,8 @@
   "author": {
     "name": "Federico Mosca"
   },
-  "repository": "https://github.com/opendatahub-io/odh-test-gen",
-  "homepage": "https://github.com/opendatahub-io/odh-test-gen",
+  "repository": "https://github.com/fullsend-ai/test-creator",
+  "homepage": "https://github.com/fullsend-ai/test-creator",
   "license": "Apache-2.0",
   "keywords": [
     "test-plan",

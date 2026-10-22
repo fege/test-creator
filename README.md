@@ -72,8 +72,8 @@ Use skills:
 Clone the repository directly:
 
 ```bash
-git clone https://github.com/opendatahub-io/odh-test-gen ~/Code/odh-test-gen
-cd ~/Code/odh-test-gen
+git clone https://github.com/fullsend-ai/test-creator ~/Code/test-creator
+cd ~/Code/test-creator
 uv sync --extra dev
 ```
 
@@ -431,95 +431,23 @@ scripts/
     ├── markdown_utils.py   # Parse markdown section content
     ├── strat_utils.py      # Parse STRAT sections from fetched Jira wiki markup
     └── test_analyzer.py    # Common setup requirements identification
+
+tests/
+├── unit/                   # Unit tests (fast, isolated)
+├── integration/            # Integration tests (subprocess, file I/O)
+├── consts/                 # Shared test data by domain (<domain>_constants.py)
+├── fixtures/               # Static fixture files
+├── conftest.py             # Shared fixtures (run_cli, git_repo, feature_dir)
+├── helpers.py              # Factories for valid test artifacts
+└── constants.py            # Legacy artifact base data (do not extend — see AGENTS.md)
 ```
 
 ## Development
 
-### Prerequisites
+Development setup, commands, conventions, and the pull-request workflow (including the
+fullsend agent workflow) are documented in [CONTRIBUTING.md](CONTRIBUTING.md). Working
+conventions for AI coding agents are in [AGENTS.md](AGENTS.md); architecture background is in
+[CLAUDE.md](CLAUDE.md).
 
-Install the package in development mode with dev dependencies:
-
-```bash
-uv sync --extra dev
-```
-
-This installs:
-- The `test-plan` package in editable mode (changes are immediately available)
-- `pyyaml` - YAML frontmatter parsing
-- `pytest` - Test framework
-- `pytest-cov` - Coverage reporting
-
-### Linting
-
-Activate hooks (pre-commit is installed via `uv sync --extra dev`):
-
-```bash
-uv run pre-commit install
-```
-
-Hooks run automatically on `git commit`. To run manually on all files:
-
-```bash
-uv run pre-commit run --all-files
-```
-
-Hooks include:
-- **ruff** — lint and format (auto-fixes on commit)
-- **flake8** + [RedHatQE flake8-plugins](https://github.com/RedHatQE/flake8-plugins) — unused code (`UUC`), unique fixture names (`UFN`)
-
-### Running Tests
-
-Run all tests:
-```bash
-uv run pytest tests/ -v
-```
-
-Run a specific test file:
-```bash
-uv run pytest tests/unit/test_schema_validation.py -v
-```
-
-Run tests with coverage:
-```bash
-uv run pytest tests/ -v --cov=scripts --cov-report=term-missing
-```
-
-Run a specific test:
-```bash
-uv run pytest tests/unit/test_schema_validation.py::TestPlanSchemaValidation::test_field_validation -v
-```
-
-### Test Structure
-
-```
-tests/
-├── constants.py                      # Shared test data constants
-├── conftest.py                       # Shared fixtures (feature_dir)
-├── unit/                             # Unit tests (fast, isolated)
-│   ├── test_schema_validation.py     # Schema validation (test-plan, test-case, test-gaps)
-│   ├── test_frontmatter_operations.py # Read, write, update operations
-│   ├── test_frontmatter_cli_unit.py  # CLI interface tests
-│   ├── test_detect_components.py     # Component detection and repo mapping
-│   ├── test_filter_test_cases.py     # Test case filtering by status
-│   ├── test_map_test_files.py        # File mapping with strategy pattern
-│   ├── test_list_test_functions.py   # AST-based function extraction
-│   ├── test_load_pattern_guides.py   # Pattern guide loading
-│   ├── test_parse_test_score.py      # Score file parsing
-│   ├── test_update_tc_frontmatter.py # Bulk frontmatter updates
-│   ├── test_validate.py              # Unified validation (feature-dir, gap-counts, test-cases, all)
-│   ├── test_text_utils.py            # Text sanitization utilities
-│   ├── test_tc_parser_utils.py       # TC category/title extraction
-│   ├── test_repo_cli.py              # Repository CLI tests
-│   ├── test_repo_discovery.py        # Repository indicator extraction
-│   ├── test_repo_utils.py            # Repository utility functions
-│   ├── test_analyzer.py              # Common setup identification
-│   ├── test_ui_verify_helpers.py     # UI test helpers
-│   ├── test_jira_utils.py            # Jira API client tests (retry logic, label merging)
-│   └── test_fetch_issue.py           # Jira issue markdown formatting
-└── integration/                      # Integration tests (subprocess, file I/O)
-    ├── test_artifact_utils_validation.py # Review schema validation
-    ├── test_filter_for_revision.py   # Revision filter (subprocess)
-    ├── test_preserve_review_state.py # State persistence
-    ├── test_tc_parser.py             # TC file parsing integration tests
-    └── test_validate_cli.py          # Validation CLI smoke tests
-```
+The test suite layout is described in [AGENTS.md](AGENTS.md#test-conventions) — the
+`tests/` directory itself is the source of truth for the current file list.
