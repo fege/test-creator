@@ -1134,5 +1134,6 @@ Strategy: {README_STRAT_URL}
 - Test plan: [TestPlan.md](TestPlan.md)
 """
 README_NO_STRAT_URL = "# Test Feature\n\n- Test plan: [TestPlan.md](./TestPlan.md)\n"
+README_LONGER_STRAT_KEY = f"# Test Feature\n\nStrategy: {README_STRAT_URL}0\n\nSee [TestPlan.md](TestPlan.md).\n"
 README_NO_TESTPLAN_LINK = f"# Test Feature\n\nStrategy: {README_STRAT_URL}\n\nSee TestPlan.md for details.\n"
 HANDOFF_FEATURE_DIR = "plans/test_feature"

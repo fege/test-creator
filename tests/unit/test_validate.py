@@ -29,6 +29,7 @@ from scripts.validate import (
 )
 from scripts.validate_test_scope import load_and_validate as validate_scope
 from tests.consts.test_plan_constants import (
+    README_LONGER_STRAT_KEY,
     README_NO_STRAT_URL,
     README_NO_TESTPLAN_LINK,
     README_STRAT_URL,
@@ -657,6 +658,7 @@ class TestValidateReadme:
         [
             pytest.param(README_VALID, [], id="complete"),
             pytest.param(README_NO_STRAT_URL, ["strat_url"], id="missing-strat-url"),
+            pytest.param(README_LONGER_STRAT_KEY, ["strat_url"], id="longer-strat-key"),
             pytest.param(README_NO_TESTPLAN_LINK, ["TestPlan.md link"], id="missing-testplan-link"),
             pytest.param("# Test Feature\n", ["strat_url", "TestPlan.md link"], id="missing-both"),
         ],

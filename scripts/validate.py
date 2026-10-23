@@ -342,7 +342,7 @@ def validate_readme(feature_dir: str, strat_url: str) -> dict:
     if not content.strip():
         return {"valid": False, "error": f"README.md is empty: {path}"}
     missing = []
-    if strat_url not in content:
+    if not re.search(re.escape(strat_url) + r"(?![\w-])", content):
         missing.append("strat_url")
     if not TESTPLAN_LINK_RE.search(content):
         missing.append("TestPlan.md link")
