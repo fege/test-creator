@@ -1125,7 +1125,7 @@ VALID_TEST_PLAN_REVIEW_DATA = {
     "last_updated": "2026-04-14",
 }
 
-# README.md fixtures for validate.py readme and the Fullsend handoff-file check
+# README.md fixtures for validate.py readme
 README_STRAT_URL = "https://issues.example.com/browse/RHAISTRAT-400"
 README_VALID = f"""# Test Feature
 
@@ -1136,4 +1136,3 @@ Strategy: {README_STRAT_URL}
 README_NO_STRAT_URL = "# Test Feature\n\n- Test plan: [TestPlan.md](./TestPlan.md)\n"
 README_LONGER_STRAT_KEY = f"# Test Feature\n\nStrategy: {README_STRAT_URL}0\n\nSee [TestPlan.md](TestPlan.md).\n"
 README_NO_TESTPLAN_LINK = f"# Test Feature\n\nStrategy: {README_STRAT_URL}\n\nSee TestPlan.md for details.\n"
-HANDOFF_FEATURE_DIR = "plans/test_feature"
