@@ -2,26 +2,20 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+Working conventions for all agents — scope discipline, test idioms, lint expectations,
+commit rules — live in [AGENTS.md](AGENTS.md). Read that file before changing code; this
+file focuses on architecture and the skill pipeline. The user-facing skill catalog and
+installation instructions are in [README.md](README.md).
+
 ## Project Overview
 
 A Claude Code plugin (`test-plan`) that provides skills for end-to-end test planning for RHOAI (Red Hat OpenShift AI). Skills generate test plans from Jira strategies, create test cases, implement executable automation code, verify UI tests via Playwright, publish to GitHub, and score quality. The plugin is distributed via the opendatahub-io/skills-registry marketplace.
 
 ## Build & Test Commands
 
-```bash
-uv sync --extra dev          # Install dependencies (editable mode)
-uv run pytest tests/ -v      # Run all tests
-uv run pytest tests/unit/ -v # Run unit tests only
-uv run pytest tests/integration/ -v  # Run integration tests only
-uv run pytest tests/unit/test_schema_validation.py -v  # Run one test file
-uv run pytest tests/unit/test_schema_validation.py::TestPlanSchemaValidation::test_field_validation -v  # Run one test
-uv run pytest tests/ -v --cov=scripts --cov-report=term-missing  # With coverage
-make lint                    # Run skillsaw linter
-make skillsaw-fix            # Auto-fix skillsaw issues
-pre-commit run --all-files   # Run all pre-commit hooks (ruff, flake8, pymarkdown, etc.)
-```
-
-CI enforces `--cov-fail-under=70` for test coverage (in `.github/workflows/test.yml`).
+All build, test, and lint commands live in [AGENTS.md](AGENTS.md#commands) — the canonical
+reference, kept in one place so the listings cannot drift apart. CI enforces
+`--cov-fail-under=70` for test coverage (in `.github/workflows/test.yml`).
 
 ## Architecture
 
@@ -48,7 +42,7 @@ Procedural logic is extracted to deterministic Python scripts in `scripts/` — 
 
 ### Test infrastructure
 
-Tests call script `main()` functions directly using the `run_cli` fixture (in `conftest.py`), which captures stdout JSON. The `git_repo` fixture provides a temporary git repository. Shared test data constants live in `tests/constants.py`; helper factories for building valid artifacts are in `tests/helpers.py`. Static fixture files live in `tests/fixtures/`. CI runs on Python 3.14.
+Tests call script `main()` functions directly using the `run_cli` fixture (in `conftest.py`), which captures stdout JSON. The `git_repo` fixture provides a temporary git repository. Shared test data lives in `tests/consts/<domain>_constants.py` (validation, test_plan, gaps, calibration, markdown); helper factories for building valid artifacts are in `tests/helpers.py`; static fixture files live in `tests/fixtures/`. `tests/constants.py` is the legacy artifact-base-data module — do not add new domain fixtures there. CI runs on Python 3.14.
 
 ## Skill Pipeline
 
@@ -95,8 +89,7 @@ Test plan artifacts (TestPlan.md, TC-*.md files) are written to a separate direc
 
 ## Code Review Invariants
 
-These rules from `.coderabbit.yaml` apply to all contributions:
-- Scripts in `scripts/` must be fully deterministic — no LLM or AI API calls
-- Jira credentials must come from environment variables, GitHub auth through the `gh` CLI — never hardcoded
-- CLI entry points must return structured JSON errors (`{"status": "failed", "error": "..."}`)
-- SKILL.md files must not embed procedural logic — delegate to Python scripts
+The contribution rules — deterministic scripts with no LLM calls, credentials via
+environment variables, structured JSON errors, instruction-only SKILL.md files — are
+stated once in [AGENTS.md](AGENTS.md#code-conventions). Review-time enforcement and the
+per-path threat model live in [`.coderabbit.yaml`](.coderabbit.yaml).
