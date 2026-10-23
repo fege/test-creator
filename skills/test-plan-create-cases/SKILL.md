@@ -379,6 +379,17 @@ Run:
 
 If any check fails, fix the issue and re-run.
 
+### Step 6: Remove the runtime helper link
+
+Always run this last, also when exiting early after Step 0.2 located `feature_dir`. It deletes only
+a `.odh-test-gen` symlink to this plugin from the feature and output directories, so publishers
+never see it:
+
+```bash
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+ uv run python scripts/remove_runtime_alias.py "$feature_dir") || exit 1
+```
+
 ### What this skill does NOT do
 
 - Does NOT modify the test plan's Sections 1-4, 7-8, or 9.3 — those are owned by `/test-plan-create` (Sections 9.1 and 9.2 ARE filled by this skill — see Steps 5.5/5.6)

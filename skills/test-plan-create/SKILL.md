@@ -483,6 +483,18 @@ fi
 
 Label stamping is **non-blocking**: warn on failure and continue without retrying.
 
+### Step 5: Remove the runtime helper link
+
+Always run this last, also when stopping after Step 1.5 created `feature_dir`. It deletes only a
+`.odh-test-gen` symlink to this plugin from the feature and output directories, so publishers never
+see it:
+
+```bash
+feature_dir="<absolute_path_to_output_dir>/<feature_name>"
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && \
+ uv run python scripts/remove_runtime_alias.py "$feature_dir") || exit 1
+```
+
 ### What this skill does NOT do
 
 - **Sources/feedback:** Fetch only the requested strategy/issue, never child stories. Read ADRs only
