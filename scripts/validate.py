@@ -15,6 +15,7 @@ Usage:
     uv run python scripts/validate.py structure <testplan_path>
     uv run python scripts/validate.py category-prefixes <testplan_path>
     uv run python scripts/validate.py feature-name <feature_name>
+    uv run python scripts/validate.py readme <feature_dir> --strat-url URL
     uv run python scripts/validate.py interface-types <testplan_path>
     uv run python scripts/validate.py interface-coverage <testplan_path>
     uv run python scripts/validate.py infra-scope <testplan_path>
@@ -325,6 +326,27 @@ def validate_feature_name(feature_name: str) -> dict:
             "error": f"feature_name must be snake_case (^[a-z][a-z0-9_]*$): {feature_name!r}",
         }
     return {"valid": True}
+
+
+TESTPLAN_LINK_RE = re.compile(r"\]\(\s*(?:\./)?TestPlan\.md(?:#[^)\s]*)?\s*\)")
+
+
+def validate_readme(feature_dir: str, strat_url: str) -> dict:
+    """Check README.md exists, is non-empty, and contains strat_url and a link to TestPlan.md."""
+    if not strat_url.strip():
+        return {"valid": False, "error": "strat_url must be non-empty"}
+    path = Path(feature_dir) / "README.md"
+    if not path.is_file():
+        return {"valid": False, "error": f"File not found: {path}"}
+    content = path.read_text()
+    if not content.strip():
+        return {"valid": False, "error": f"README.md is empty: {path}"}
+    missing = []
+    if not re.search(re.escape(strat_url) + r"(?![\w-])", content):
+        missing.append("strat_url")
+    if not TESTPLAN_LINK_RE.search(content):
+        missing.append("TestPlan.md link")
+    return {"valid": not missing, "missing": missing}
 
 
 def validate_category_prefixes(testplan_path: str) -> dict:
@@ -828,6 +850,12 @@ def cmd_feature_name(args):
     sys.exit(0 if result["valid"] else 1)
 
 
+def cmd_readme(args):
+    result = validate_readme(args.feature_dir, args.strat_url)
+    print(json.dumps(result, indent=2))
+    sys.exit(0 if result["valid"] else 1)
+
+
 def cmd_interface_types(args):
     result = validate_interface_types(args.testplan_path)
     print(json.dumps(result, indent=2))
@@ -934,6 +962,11 @@ def main():
     )
     p_feature_name.add_argument("feature_name", help="Feature directory name to validate")
     p_feature_name.set_defaults(func=cmd_feature_name)
+
+    p_readme = subparsers.add_parser("readme", help="Check README.md has strat_url and a TestPlan.md link")
+    p_readme.add_argument("feature_dir", help="Path to feature directory")
+    p_readme.add_argument("--strat-url", required=True, help="Strategy URL README.md must contain")
+    p_readme.set_defaults(func=cmd_readme)
 
     p_iface = subparsers.add_parser(
         "interface-types", help="Check Section 4 interface types against REST/gRPC/UI/CLI/CRD allowlist"

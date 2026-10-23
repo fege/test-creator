@@ -20,6 +20,7 @@ from scripts.validate import (
     validate_infra_scope,
     validate_interface_coverage,
     validate_interface_types,
+    validate_readme,
     validate_structure,
     validate_tc_counts,
     validate_tc_scope,
@@ -28,6 +29,11 @@ from scripts.validate import (
 )
 from scripts.validate_test_scope import load_and_validate as validate_scope
 from tests.consts.test_plan_constants import (
+    README_LONGER_STRAT_KEY,
+    README_NO_STRAT_URL,
+    README_NO_TESTPLAN_LINK,
+    README_STRAT_URL,
+    README_VALID,
     TESTPLAN_AC_BULLET_FORMAT,
     TESTPLAN_AC_CITED,
     TESTPLAN_AC_MISSING,
@@ -642,6 +648,62 @@ class TestValidateFeatureName:
         assert result["valid"] is expected_valid
         if not expected_valid:
             assert "error" in result
+
+
+class TestValidateReadme:
+    """Tests for validate_readme — README.md must exist with strat_url and a TestPlan.md link."""
+
+    @pytest.mark.parametrize(
+        "content, expected_missing",
+        [
+            pytest.param(README_VALID, [], id="complete"),
+            pytest.param(README_NO_STRAT_URL, ["strat_url"], id="missing-strat-url"),
+            pytest.param(README_LONGER_STRAT_KEY, ["strat_url"], id="longer-strat-key"),
+            pytest.param(README_NO_TESTPLAN_LINK, ["TestPlan.md link"], id="missing-testplan-link"),
+            pytest.param("# Test Feature\n", ["strat_url", "TestPlan.md link"], id="missing-both"),
+        ],
+    )
+    def test_content(self, tmp_path, content, expected_missing):
+        (tmp_path / "README.md").write_text(content)
+
+        result = validate_readme(str(tmp_path), README_STRAT_URL)
+
+        assert result["valid"] is (not expected_missing)
+        assert result["missing"] == expected_missing
+
+    def test_missing_file(self, tmp_path):
+        result = validate_readme(str(tmp_path), README_STRAT_URL)
+
+        assert result["valid"] is False
+        assert "File not found" in result["error"]
+
+    def test_empty_file(self, tmp_path):
+        (tmp_path / "README.md").write_text("  \n")
+
+        result = validate_readme(str(tmp_path), README_STRAT_URL)
+
+        assert result["valid"] is False
+        assert "README.md is empty" in result["error"]
+
+    def test_empty_strat_url_rejected(self, tmp_path):
+        (tmp_path / "README.md").write_text(README_VALID)
+
+        result = validate_readme(str(tmp_path), "")
+
+        assert result["valid"] is False
+        assert "strat_url must be non-empty" in result["error"]
+
+    @pytest.mark.parametrize(
+        "content, expected_exit",
+        [pytest.param(README_VALID, 0, id="valid"), pytest.param(README_NO_TESTPLAN_LINK, 1, id="invalid")],
+    )
+    def test_cli(self, tmp_path, run_cli, content, expected_exit):
+        (tmp_path / "README.md").write_text(content)
+
+        exit_code, output = run_cli(validate_module.main, ["readme", str(tmp_path), "--strat-url", README_STRAT_URL])
+
+        assert exit_code == expected_exit
+        assert output["valid"] is (expected_exit == 0)
 
 
 class TestValidateInterfaceTypes:

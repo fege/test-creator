@@ -254,8 +254,8 @@ clauses. Advisories may score `actionability == 2`; only `bare_tbd`/`missing_det
    headings. Do not write frontmatter manually. Wrap prose/list items to 100 characters and apply
    Step 2 objective markers, excluding out-of-scope Section 1.2 items.
 4. In Section 9.2 fill only Interface from Section 4; leave Test Cases and Coverage empty.
-5. Include feature name/description, `strat_url`, optional ADR/design-spec refs, TestPlan link, and
-   automated-test destination in `README.md`.
+5. Generate `$feature_dir/README.md` with feature name/description, `strat_url`, optional
+   ADR/design-spec refs, a `[TestPlan.md](TestPlan.md)` link, and automated-test destination.
 
 ### Step 3.1: Set Frontmatter
 
@@ -291,7 +291,7 @@ Use Step 1.5 `components` (empty becomes `[]`) and include the ADR, other user l
 ### Step 3.2: Validate Generated Test Plan
 
 Run these deterministic checks after frontmatter; Step 1.5 sets `$ac_count` and
-`$nfr_category_flags`:
+`$nfr_category_flags`, and Step 3 sets `$strat_url`:
 
 ```bash
 testplan="<absolute_path_to_output_dir>/<feature_name>/TestPlan.md"
@@ -313,7 +313,8 @@ team_list=$(cd "$repo_root" && uv run python scripts/get_component_test_dir.py -
  uv run python scripts/validate.py structure "$testplan" && \
  uv run python scripts/validate.py category-prefixes "$testplan" && \
  uv run python scripts/validate.py interface-types "$testplan" && \
- uv run python scripts/validate.py infra-scope "$testplan") || {
+ uv run python scripts/validate.py infra-scope "$testplan" && \
+ uv run python scripts/validate.py readme "$feature_dir" --strat-url "$strat_url") || {
     echo "ERROR: test-plan validation failed — stopping." >&2
     exit 1
 }
@@ -332,7 +333,8 @@ printf '%s\n' "$citation_inputs" | jq -e '.scope_coverage_result.valid' >/dev/nu
 }
 ```
 
-If a check fails, fix `TestPlan.md` and retry once; if it fails again, **STOP** and report it.
+If a check fails, fix `TestPlan.md` (or `README.md` for the `readme` check) and retry once; if it
+fails again, **STOP** and report it.
 
 ### Step 3.5: Collect Gaps and Prompt for Additional Documents
 
