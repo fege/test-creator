@@ -56,13 +56,13 @@ _TBD_RESOLUTION_RE = re.compile(
 _GENERIC_RESOLUTION_TARGET_RE = re.compile(
     r"^(?:(?:the|a|an|some|any|appropriate|relevant|responsible|right|correct)\s+)*"
     r"(?:(?:test(?:ing)?|feature|product|project|development|developer|qa|qe|quality assurance|engineering)\s+)*"
-    r"(?:someone|somebody|anyone|anybody|person|people|team|owner|stakeholders?|engineering|"
+    r"(?:someone|somebody|anyone|anybody|person|people|teams?|owners?|stakeholders?|engineering|"
     r"documentation|docs?|source|information|details?)$",
     re.IGNORECASE,
 )
 _NAMED_SOURCE_OR_OWNER_RE = re.compile(
     r"\b[A-Z][A-Z0-9]+-\d+\b"
-    r"|\b(?:[\w/-]+\s+)+(?:team|engineering|owner|manager|administrator|lead|maintainer|operator)\b"
+    r"|\b(?:[\w/-]+\s+)+(?:teams?|engineering|owners?|managers?|administrators?|leads?|maintainers?|operators?)\b"
     r"|\b(?:ADR|API spec(?:ification)?|feature refinement|design doc(?:ument)?|"
     r"design[- ]?spec(?:ification)?|Jira (?:issue|ticket))\b"
     r"|\b(?:[\w/-]+\s+)+(?:matrix|runbook|guide|roadmap|document|specification|release notes)\b"
