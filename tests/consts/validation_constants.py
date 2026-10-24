@@ -415,6 +415,12 @@ ACTIONABILITY_RESOLUTION_TARGET_BOUNDARY_CASES = (
     ("confirm the supported version before environment setup.", True),
     ("confirm the supported version by the end of environment setup.", True),
     ("obtain the supported version from RHAISTRAT-1234.", True),
+    ("confirm the version with teams", False),
+    ("confirm the version with the test teams", False),
+    ("confirm the version with the owners", False),
+    ("confirm the version with the engineering teams", False),
+    ("retrieve the supported-platform matrix from MLflow and Agent Platform teams.", True),
+    ("retrieve the supported-platform matrix from the MLflow maintainers.", True),
 )
 
 _ACTIONABILITY_WRAPPED_RBAC_RESOLUTION_USERS = """- Cluster admin with permissions to manage catalog sources and
@@ -435,6 +441,15 @@ ACTIONABILITY_WRAPPED_GENERIC_RBAC_RESOLUTION_PLAN = _build_actionability_plan(
     _ACTIONABILITY_WRAPPED_RBAC_RESOLUTION_USERS.replace(
         "Platform team per strategy open question (Owner: Platform team)",
         "Owner: test team",
+    ),
+)
+
+ACTIONABILITY_WRAPPED_PLURAL_OWNER_RBAC_RESOLUTION_PLAN = _build_actionability_plan(
+    _ACTIONABILITY_CONCRETE_INFRASTRUCTURE,
+    _ACTIONABILITY_CONCRETE_DATA,
+    _ACTIONABILITY_WRAPPED_RBAC_RESOLUTION_USERS.replace(
+        "Platform team per strategy open question (Owner: Platform team)",
+        "MLflow and Agent Platform teams before ServiceAccount configuration",
     ),
 )
 
