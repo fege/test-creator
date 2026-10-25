@@ -24,7 +24,10 @@ Usage:
         --actionability-result '<json from validate_quality_evidence.py>'
 
 Exit code 0 always; prints a JSON object to stdout with `status` one of "overridden", "ok",
-"skip", or "error" (with an `error` message field).
+"skip", or "error" (with an `error` message field). Every non-error result also carries
+`next`: "revise" | "proceed" — the revision decision from filter_for_revision() applied to the
+(possibly corrected) review, so test-plan-review Step 4 branches on a script result instead of
+re-deriving the rule from the verdict.
 """
 
 import argparse
@@ -35,6 +38,7 @@ import sys
 
 import yaml
 
+from scripts.filter_for_revision import filter_for_revision
 from scripts.utils.error_utils import exit_graceful
 from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
 from scripts.utils.schemas import CRITERION_LABELS, REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
@@ -610,6 +614,16 @@ def enforce_citation_gate(
     }
 
 
+def decide_revision_next(feature_dir: str) -> str:
+    """Map filter_for_revision()'s decision onto the gate's `next` field.
+
+    Delegates rather than re-implementing the rule so there is one source of truth: "revise" when
+    any scores.* is < 2, "proceed" otherwise — including a missing review file and a recorded
+    score regression, both of which filter_for_revision() reports as SKIP.
+    """
+    return "revise" if filter_for_revision(feature_dir) == "REVISE" else "proceed"
+
+
 def _fail(message: str) -> None:
     """Report a machine-readable error on stdout (for the calling skill) and a matching
     diagnostic on stderr (for a human watching logs), then exit — a broken gate must not abort
@@ -686,19 +700,22 @@ def main():
             scope_coverage_result=scope_coverage,
             actionability_result=actionability,
         )
+        # Decided after the caps are persisted, so a score the gate lowered below 2 triggers revision.
+        next_step = decide_revision_next(args.feature_dir)
     except ValueError as exc:
         _fail(str(exc))
     except (ValidationError, OSError, yaml.YAMLError) as exc:
         _fail(f"invalid TestPlanReview.md: {exc}")
 
     if result is None:
-        print(json.dumps({"status": "skip"}))
+        payload = {"status": "skip"}
     elif result["overridden"]:
         payload = {"status": "overridden"}
         payload.update({k: v for k, v in result.items() if k != "overridden"})
-        print(json.dumps(payload))
     else:
-        print(json.dumps({"status": "ok"}))
+        payload = {"status": "ok"}
+    payload["next"] = next_step
+    print(json.dumps(payload))
     sys.exit(0)
 
 

@@ -1527,18 +1527,54 @@ class TestEnforceCitationGateCLI:
         assert output["score"] == 9
         assert output["verdict"] == "Ready"
         assert output["pass"] is True
+        # The gate lowered a 2 to 1, so the persisted review now warrants revision.
+        assert output["next"] == "revise"
 
     def test_no_override_needed_prints_ok_status_to_stdout(self, tmp_path, capsys):
         _write_review(tmp_path / "TestPlanReview.md", ALL_TWOS, score=10, verdict="Ready", passed=True)
 
         self._run_main(self._argv(tmp_path))
 
-        assert json.loads(capsys.readouterr().out) == {"status": "ok"}
+        assert json.loads(capsys.readouterr().out) == {"status": "ok", "next": "proceed"}
 
     def test_missing_review_file_prints_skip_status_to_stdout(self, tmp_path, capsys):
         self._run_main(self._argv(tmp_path))
 
-        assert json.loads(capsys.readouterr().out) == {"status": "skip"}
+        assert json.loads(capsys.readouterr().out) == {"status": "skip", "next": "proceed"}
+
+    def test_ready_verdict_with_criterion_below_two_returns_next_revise(self, tmp_path, capsys):
+        """RHAISTRAT-2254: Ready at 9/10 with grounding 1 is not "no revision needed"."""
+        _write_review(
+            tmp_path / "TestPlanReview.md", {**ALL_TWOS, "grounding": 1}, score=9, verdict="Ready", passed=True
+        )
+
+        self._run_main(self._argv(tmp_path))
+
+        assert json.loads(capsys.readouterr().out) == {"status": "ok", "next": "revise"}
+
+    def test_score_regression_returns_next_proceed(self, tmp_path, capsys):
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            {**ALL_TWOS, "grounding": 1},
+            score=9,
+            before_score=10,
+            before_scores=ALL_TWOS,
+        )
+
+        self._run_main(self._argv(tmp_path))
+
+        assert json.loads(capsys.readouterr().out) == {"status": "ok", "next": "proceed"}
+        data, _ = read_frontmatter(review)
+        assert data["error"] == "score_regression:10->9"
+
+    def test_gate_error_has_no_next_field(self, tmp_path, capsys):
+        _write_review(tmp_path / "TestPlanReview.md", {**ALL_TWOS, "grounding": 1}, score=9)
+
+        self._run_main(self._argv(tmp_path, **{"--boilerplate-result": "NOT-JSON"}))
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "error"
+        assert "next" not in output
 
     @pytest.mark.parametrize(
         "flag, payload, error_clue",
