@@ -901,6 +901,41 @@ class TestEnforceCitationGate:
         assert "Actionability was capped" not in body
         assert f"- {actionability_result['advisory_gaps'][0]}" in body
 
+    def test_advisory_actionability_raises_persisted_score_zero_to_two_and_flips_pass(self, tmp_path):
+        scores = {**ALL_TWOS, "actionability": 0}
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            scores,
+            score=8,
+            verdict="Rework",
+            passed=False,
+            before_score=8,
+            before_scores=dict(scores),
+        )
+        plan = tmp_path / "TestPlan.md"
+        plan.write_text(ACTIONABILITY_ADVISORY_GAPS_PLAN)
+        actionability_result = validate_actionability(str(plan))
+
+        assert actionability_result["valid"] is True
+        result = _enforce_citation_gate(
+            str(tmp_path),
+            VALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=actionability_result,
+        )
+
+        assert result["overridden"] is True
+        assert result["actionability_raised"] is True
+        assert result["pass"] is True
+        data, _ = read_frontmatter(review)
+        assert data["scores"] == ALL_TWOS
+        assert data["score"] == 10
+        assert data["verdict"] == "Ready"
+        assert data["pass"] is True
+        assert filter_for_revision(str(tmp_path)) == "SKIP"
+
     def test_override_recomputes_score_and_verdict_with_blocking_actionability_left_at_one(self, tmp_path):
         # The resulting scores are specificity=2, grounding=2, scope_fidelity=1, actionability=1,
         # consistency=1 -> total 7, and the recomputed verdict is Revise. Blocking actionability
