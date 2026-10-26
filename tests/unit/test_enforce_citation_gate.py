@@ -424,7 +424,9 @@ class TestCapSpecificity:
 
 
 class TestCapActionability:
-    """Pure-function tests for blocking actionability caps and valid-score preservation."""
+    """Pure-function tests for the two-way actionability gate: blocking evidence caps to 1,
+    valid evidence with no blocking gaps raises to 2.
+    """
 
     @pytest.mark.parametrize("score", (0, 1), ids=("score-zero", "score-one"))
     @pytest.mark.parametrize(
@@ -434,12 +436,31 @@ class TestCapActionability:
             pytest.param(VALID_ACTIONABILITY, id="valid-concrete"),
         ),
     )
-    def test_valid_actionability_preserves_scorer_score_without_override(self, score, actionability_result):
+    def test_valid_actionability_raises_scorer_score_to_two(self, score, actionability_result):
         scores = {**ALL_TWOS, "actionability": score}
 
         result = cap_actionability(scores, actionability_result)
 
-        assert result == {"overridden": False, "scores": scores}
+        assert result == {
+            "overridden": True,
+            "scores": ALL_TWOS,
+            "score": 10,
+            "pass": True,
+            "verdict": "Ready",
+            "actionability_raised": True,
+        }
+
+    @pytest.mark.parametrize(
+        "actionability_result",
+        (
+            pytest.param(ACTIONABILITY_ADVISORY_RESULT, id="advisory-only"),
+            pytest.param(VALID_ACTIONABILITY, id="valid-concrete"),
+        ),
+    )
+    def test_valid_actionability_leaves_score_two_unchanged(self, actionability_result):
+        result = cap_actionability(ALL_TWOS, actionability_result)
+
+        assert result == {"overridden": False, "scores": ALL_TWOS}
 
     def test_blocking_actionability_caps_score_above_one_to_one(self):
         result = cap_actionability(ALL_TWOS, INVALID_ACTIONABILITY)
@@ -447,6 +468,15 @@ class TestCapActionability:
         assert result["overridden"] is True
         assert result["scores"]["actionability"] == 1
         assert result["actionability_capped"] is True
+        assert "actionability_raised" not in result
+
+    @pytest.mark.parametrize("score", (0, 1), ids=("score-zero", "score-one"))
+    def test_blocking_actionability_leaves_score_at_or_below_one_unchanged(self, score):
+        scores = {**ALL_TWOS, "actionability": score}
+
+        result = cap_actionability(scores, INVALID_ACTIONABILITY)
+
+        assert result == {"overridden": False, "scores": scores}
 
 
 class TestApplyScoreCaps:
@@ -510,6 +540,19 @@ class TestApplyScoreCaps:
         assert result["score"] == 9
         assert result["verdict"] == "Revise"
         assert result["actionability_capped"] is True
+
+    def test_actionability_raise_composes_with_scope_fidelity_cap(self):
+        scores = {**ALL_TWOS, "actionability": 1}
+
+        result = _apply_score_caps(scores, INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE)
+
+        assert result["overridden"] is True
+        assert result["scope_fidelity_capped"] is True
+        assert result["actionability_raised"] is True
+        assert result["actionability_capped"] is False
+        assert result["scores"] == {**ALL_TWOS, "scope_fidelity": 1}
+        assert result["score"] == 9
+        assert result["verdict"] == "Ready"
 
     def test_omitting_required_quality_evidence_raises(self):
         with pytest.raises(TypeError, match="scope_coverage_result"):
@@ -817,7 +860,7 @@ class TestEnforceCitationGate:
         assert data["score"] == 10
         assert filter_for_revision(str(tmp_path)) == "SKIP"
 
-    def test_advisory_actionability_preserves_persisted_score_one(self, tmp_path):
+    def test_advisory_actionability_raises_persisted_score_one_to_two(self, tmp_path):
         scores = {**ALL_TWOS, "actionability": 1}
         review = _write_review(
             tmp_path / "TestPlanReview.md",
@@ -843,24 +886,35 @@ class TestEnforceCitationGate:
             actionability_result=actionability_result,
         )
 
-        assert result == {"overridden": False}
+        assert result["overridden"] is True
+        assert result["actionability_raised"] is True
+        assert result["actionability_capped"] is False
         data, _ = read_frontmatter(review)
-        assert data["scores"] == scores
-        assert data["score"] == 9
-        assert data["verdict"] == "Revise"
-        assert data["before_score"] == 9
-        assert data["before_scores"] == scores
-        assert filter_for_revision(str(tmp_path)) == "REVISE"
-        assert "Actionability was capped" not in Path(review).read_text()
+        assert data["scores"] == ALL_TWOS
+        assert data["score"] == 10
+        assert data["verdict"] == "Ready"
+        assert data["before_score"] == 10
+        assert data["before_scores"] == ALL_TWOS
+        assert filter_for_revision(str(tmp_path)) == "SKIP"
+        body = Path(review).read_text()
+        assert "Actionability was raised to 2/2" in body
+        assert "Actionability was capped" not in body
+        assert f"- {actionability_result['advisory_gaps'][0]}" in body
 
-    def test_override_recomputes_score_and_verdict_without_actionability_normalization(self, tmp_path):
+    def test_override_recomputes_score_and_verdict_with_blocking_actionability_left_at_one(self, tmp_path):
         # The resulting scores are specificity=2, grounding=2, scope_fidelity=1, actionability=1,
-        # consistency=1 -> total 7, and the recomputed verdict is Revise.
+        # consistency=1 -> total 7, and the recomputed verdict is Revise. Blocking actionability
+        # evidence keeps the already-capped actionability=1 as recorded.
         scores = {"specificity": 2, "grounding": 2, "scope_fidelity": 2, "actionability": 1, "consistency": 1}
         review = _write_review(tmp_path / "TestPlanReview.md", scores, score=8, verdict="Revise", passed=True)
 
         result = _enforce_citation_gate(
-            str(tmp_path), INVALID_CITATIONS, VALID_COVERAGE, VALID_SCOPE_CHECK, VALID_BOILERPLATE
+            str(tmp_path),
+            INVALID_CITATIONS,
+            VALID_COVERAGE,
+            VALID_SCOPE_CHECK,
+            VALID_BOILERPLATE,
+            actionability_result=INVALID_ACTIONABILITY,
         )
 
         assert result["scores"] == {
@@ -1670,3 +1724,42 @@ class TestEnforceCitationGateCLI:
         output = json.loads(capsys.readouterr().out)
         assert output["status"] == "overridden"
         assert output["scores"]["actionability"] == 1
+
+    def test_valid_actionability_raise_rewrites_review_and_returns_next_proceed(self, tmp_path, capsys):
+        body = REVIEW_RUBRIC_SCORES_LAYOUT.replace("| Actionability | 2/2 |", "| Actionability | 1/2 |").replace(
+            "Total: 10/10 — Verdict: Ready", "Total: 9/10 — Verdict: Revise"
+        )
+        review = _write_review(
+            tmp_path / "TestPlanReview.md",
+            {**ALL_TWOS, "actionability": 1},
+            score=9,
+            verdict="Revise",
+            passed=True,
+            body=body,
+        )
+
+        self._run_main(self._argv(tmp_path, **{"--actionability-result": json.dumps(ACTIONABILITY_ADVISORY_RESULT)}))
+
+        output = json.loads(capsys.readouterr().out)
+        assert output["status"] == "overridden"
+        assert output["scores"] == ALL_TWOS
+        assert output["score"] == 10
+        assert output["verdict"] == "Ready"
+        assert output["actionability_raised"] is True
+        assert output["actionability_capped"] is False
+        assert output["next"] == "proceed"
+        data, written_body = read_frontmatter(review)
+        assert data["scores"]["actionability"] == 2
+        assert data["score"] == 10
+        assert data["verdict"] == "Ready"
+        assert "| Actionability | 2/2 |" in written_body
+        assert "| Actionability | 1/2 |" not in written_body
+        assert "Total: 10/10 — Verdict: Ready" in written_body
+        assert "Actionability was raised to 2/2" in written_body
+
+        # A second run against the corrected review is a no-op.
+        before_second_run = Path(review).read_text()
+        self._run_main(self._argv(tmp_path, **{"--actionability-result": json.dumps(ACTIONABILITY_ADVISORY_RESULT)}))
+
+        assert json.loads(capsys.readouterr().out) == {"status": "ok", "next": "proceed"}
+        assert Path(review).read_text() == before_second_run

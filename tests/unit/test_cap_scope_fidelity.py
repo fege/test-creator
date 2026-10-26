@@ -194,6 +194,18 @@ class TestCapScopeFidelityVerdict:
         assert output["score"] == 9
         assert output["verdict"] == "Revise"
 
+    def test_valid_actionability_raises_stateless_score_to_two(self, capsys):
+        scores = {**ALL_TWOS, "actionability": 1}
+
+        output = _run(["--scores-json", json.dumps(scores), *DEFAULT_RESULT_ARGS], capsys)
+
+        assert output["status"] == "overridden"
+        assert output["scores"] == ALL_TWOS
+        assert output["score"] == 10
+        assert output["verdict"] == "Ready"
+        assert output["actionability_raised"] is True
+        assert output["actionability_capped"] is False
+
 
 class TestCapScopeFidelityStructuredErrors:
     """Cluster B: input passes argparse but fails downstream validation → structured error

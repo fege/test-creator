@@ -243,8 +243,8 @@ The review agent writes rubric scores, feedback, and validated frontmatter to
 
 Reapply Scope Fidelity/Specificity caps and the Actionability correction deterministically.
 `enforce_citation_gate.py` always exits 0 and reports JSON: blocking evidence caps Actionability
-above 1 to 1/2; valid evidence never raises 0/1. `actionability_capped` is true only if the cap
-changes the score.
+above 1 to 1/2; valid evidence with no blocking gaps raises 0/1 to 2/2. `actionability_capped` /
+`actionability_raised` is true only if that correction changes the score.
 
 ```bash
 repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
