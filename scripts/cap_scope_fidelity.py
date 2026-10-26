@@ -2,8 +2,8 @@
 """Deterministically cap Scope Fidelity/Specificity/Actionability when the citation/scope/quality/boilerplate checks
 say they should be, for callers with no TestPlanReview.md to persist to.
 
-Valid Actionability with no blocking ``bare_tbd``/``missing_details`` evidence preserves the
-scorer's 0/1 result; only blocking evidence is capped to 1, while ``advisory_gaps`` remain
+Valid Actionability with no blocking ``bare_tbd``/``missing_details`` evidence raises the
+scorer's 0/1 result to 2; only blocking evidence is capped to 1, while ``advisory_gaps`` remain
 informational. The test-plan-score skill presents a rubric assessment directly without writing a
 review file, so this script provides the deterministic backstop that test-plan-score would otherwise
 lack. Wraps scripts.enforce_citation_gate.apply_score_caps() — the same pure logic

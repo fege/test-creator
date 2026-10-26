@@ -4,15 +4,16 @@ deterministic checks it was given.
 
 score-agent.md instructs the LLM to read ac_citations_result.valid / ac_coverage_result.valid /
 scope_check_result.valid directly and cap Scope Fidelity to <= 1 when any is false, cap
-Actionability when blocking actionability evidence is present, and cap Specificity per
+Actionability when blocking actionability evidence is present (and raise it to 2 when the evidence
+is valid with no blocking gaps, since advisory gaps alone must not lower it), and cap Specificity per
 boilerplate_result.total_violations — but LLM compliance with those instructions isn't guaranteed.
 This re-applies the same rules after TestPlanReview.md is written: overriding the recorded score
 (in the frontmatter and in the body's score table, total, and verdict text) when it's inconsistent
 with the already-computed results, and injecting a deterministic feedback
 note (which objectives are uncited/invalid, which AC numbers are missing, which Section 2.1
-levels are disallowed, which sections have boilerplate language, and which blocking actionability
-gaps remain) so the revise agent has something concrete to act on even if the review agent's own
-prose feedback missed it.
+levels are disallowed, which sections have boilerplate language, which blocking actionability
+gaps remain, or why Actionability was raised) so the revise agent has something concrete to act on
+even if the review agent's own prose feedback missed it.
 
 Usage:
     python3 scripts/enforce_citation_gate.py <feature_dir> \
@@ -116,6 +117,7 @@ def _build_feedback_note(
     actionability_result: dict | None,
     actionability_capped: bool,
     specificity_capped: bool,
+    actionability_raised: bool,
 ) -> str:
     lines: list[str] = []
 
@@ -175,6 +177,19 @@ def _build_feedback_note(
             "\nFix: specify concrete environment, test-data, and test-user permissions, or retain TBD "
             "with an explicit resolution path."
         )
+
+    if actionability_raised:
+        if lines:
+            lines.append("\n---")
+        lines.append(
+            "**Automated correction (deterministic actionability gate)**: Actionability was "
+            "raised to 2/2 — the deterministic actionability evidence is valid and reports no blocking "
+            "gaps (`bare_tbd` and `missing_details` are empty), so the recorded score was too strict."
+        )
+        advisory_gaps = (actionability_result or {}).get("advisory_gaps") or []
+        if advisory_gaps:
+            lines.append("\nAdvisory gaps (non-blocking; they do not lower the score):")
+            lines.extend(f"- {item}" for item in advisory_gaps)
 
     if specificity_capped:
         if lines:
@@ -423,7 +438,9 @@ def cap_scope_fidelity(
 
 
 def cap_actionability(scores: dict, actionability_result: dict) -> dict:
-    """Preserve valid Actionability, or cap it to 1 for blocking evidence."""
+    """Make Actionability follow the deterministic evidence in both directions: cap it to 1 for
+    blocking evidence, or raise it to 2 when there is none (advisory gaps alone never lower it).
+    """
     _validate_scores(scores)
     _validate_required_quality_result(actionability_result, "actionability_result", _validate_actionability_for_capping)
 
@@ -432,19 +449,16 @@ def cap_actionability(scores: dict, actionability_result: dict) -> dict:
     if blocking_gaps:
         if scores["actionability"] <= 1:
             return {"overridden": False, "scores": scores}
-
         scores["actionability"] = 1
-        verdict, score, passed = compute_verdict_and_pass(scores)
-        return {
-            "overridden": True,
-            "scores": scores,
-            "score": score,
-            "pass": passed,
-            "verdict": verdict,
-            "actionability_capped": True,
-        }
+        flag = "actionability_capped"
+    else:
+        if scores["actionability"] == 2:
+            return {"overridden": False, "scores": scores}
+        scores["actionability"] = 2
+        flag = "actionability_raised"
 
-    return {"overridden": False, "scores": scores}
+    verdict, score, passed = compute_verdict_and_pass(scores)
+    return {"overridden": True, "scores": scores, "score": score, "pass": passed, "verdict": verdict, flag: True}
 
 
 def cap_specificity(scores: dict, boilerplate_result: dict) -> dict:
@@ -499,6 +513,7 @@ def apply_score_caps(
     scope_fidelity_capped = scope_result["overridden"]
     actionability_overridden = actionability_cap_result["overridden"]
     actionability_capped = actionability_cap_result.get("actionability_capped", False)
+    actionability_raised = actionability_cap_result.get("actionability_raised", False)
     specificity_capped = specificity_result["overridden"]
     if not scope_fidelity_capped and not actionability_overridden and not specificity_capped:
         return {"overridden": False, "scores": specificity_result["scores"]}
@@ -516,6 +531,7 @@ def apply_score_caps(
         "verdict": final["verdict"],
         "scope_fidelity_capped": scope_fidelity_capped,
         "actionability_capped": actionability_capped,
+        "actionability_raised": actionability_raised,
         "specificity_capped": specificity_capped,
     }
 
@@ -563,6 +579,7 @@ def enforce_citation_gate(
     scores, score, passed, verdict = result["scores"], result["score"], result["pass"], result["verdict"]
     scope_fidelity_capped = result["scope_fidelity_capped"]
     actionability_capped = result["actionability_capped"]
+    actionability_raised = result["actionability_raised"]
     specificity_capped = result["specificity_capped"]
     updates = {"scores": scores, "score": score, "pass": passed, "verdict": verdict}
 
@@ -580,6 +597,7 @@ def enforce_citation_gate(
         actionability_result,
         actionability_capped,
         specificity_capped,
+        actionability_raised,
     )
 
     # A first-pass review sets before_score/before_scores equal to score not a genuine prior-cycle baseline.
@@ -590,7 +608,7 @@ def enforce_citation_gate(
         if before_scores:
             if scope_fidelity_capped:
                 before_scores["scope_fidelity"] = scores["scope_fidelity"]
-            if actionability_capped:
+            if actionability_capped or actionability_raised:
                 before_scores["actionability"] = scores["actionability"]
             if specificity_capped:
                 before_scores["specificity"] = scores["specificity"]
@@ -610,6 +628,7 @@ def enforce_citation_gate(
         "verdict": verdict,
         "scope_fidelity_capped": scope_fidelity_capped,
         "actionability_capped": actionability_capped,
+        "actionability_raised": actionability_raised,
         "specificity_capped": specificity_capped,
     }
 

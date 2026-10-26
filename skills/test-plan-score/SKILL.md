@@ -206,7 +206,7 @@ if [ "$cap_status" = "error" ]; then
 fi
 ```
 
-The Python helper validates that `scores_json` contains exactly five integer scores (0-2 each) before processing — malformed or out-of-range values produce a structured error, not a shell failure. If `cap_status` is `overridden`, Step 3 below presents `cap_result`'s `scores`/`score`/`verdict`/`pass` — not the agent's own numbers. The presentation must explicitly report every corrected criterion, including an **Actionability cap to 1/2** when `cap_result.actionability_capped` is `true`. The cap is based only on `actionability_result.bare_tbd` and `actionability_result.missing_details`; valid evidence preserves the scorer's 0/1, and `advisory_gaps` never cap or lower a score. For an Actionability cap, replace the score agent's original Evidence and Notes with a deterministic rationale built from the blocking fields.
+The Python helper validates that `scores_json` contains exactly five integer scores (0-2 each) before processing — malformed or out-of-range values produce a structured error, not a shell failure. If `cap_status` is `overridden`, Step 3 below presents `cap_result`'s `scores`/`score`/`verdict`/`pass` — not the agent's own numbers. The presentation must explicitly report every corrected criterion, including an **Actionability cap to 1/2** when `cap_result.actionability_capped` is `true` and an **Actionability raise to 2/2** when `cap_result.actionability_raised` is `true`. The correction is based only on `actionability_result.bare_tbd` and `actionability_result.missing_details`; valid evidence with both empty raises the scorer's 0/1 to 2/2, and `advisory_gaps` never cap or lower a score. For an Actionability cap or raise, replace the score agent's original Evidence and Notes with a deterministic rationale built from the blocking fields (empty for a raise).
 
 ### Step 3: Present Results
 
@@ -222,7 +222,7 @@ Parse the score agent's output and present the results to the user, substituting
 | Specificity | {n}/2 | {brief rationale, or "Automatically corrected — boilerplate check failed" if Step 2.5 overrode it} |
 | Grounding | {n}/2 | {brief rationale} |
 | Scope Fidelity | {n}/2 | {brief rationale, or "Automatically corrected — citation/coverage/scope checks failed" if Step 2.5 overrode it} |
-| Actionability | {n}/2 | {brief rationale when not corrected; otherwise "Automatically corrected to 1/2 — deterministic blocking actionability evidence failed: {bare_tbd and/or missing_details}"; advisory gaps may remain visible without lowering this score} |
+| Actionability | {n}/2 | {brief rationale when not corrected; otherwise "Automatically corrected to 1/2 — deterministic blocking actionability evidence failed: {bare_tbd and/or missing_details}" or "Automatically corrected to 2/2 — deterministic actionability evidence reports no blocking gaps"; advisory gaps may remain visible without lowering this score} |
 | Consistency | {n}/2 | {brief rationale} |
 
 **Total: {sum}/10**
