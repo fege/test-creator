@@ -4,15 +4,16 @@ deterministic checks it was given.
 
 score-agent.md instructs the LLM to read ac_citations_result.valid / ac_coverage_result.valid /
 scope_check_result.valid directly and cap Scope Fidelity to <= 1 when any is false, cap
-Actionability when blocking actionability evidence is present, and cap Specificity per
+Actionability when blocking actionability evidence is present (and raise it to 2 when the evidence
+is valid with no blocking gaps, since advisory gaps alone must not lower it), and cap Specificity per
 boilerplate_result.total_violations — but LLM compliance with those instructions isn't guaranteed.
 This re-applies the same rules after TestPlanReview.md is written: overriding the recorded score
 (in the frontmatter and in the body's score table, total, and verdict text) when it's inconsistent
 with the already-computed results, and injecting a deterministic feedback
 note (which objectives are uncited/invalid, which AC numbers are missing, which Section 2.1
-levels are disallowed, which sections have boilerplate language, and which blocking actionability
-gaps remain) so the revise agent has something concrete to act on even if the review agent's own
-prose feedback missed it.
+levels are disallowed, which sections have boilerplate language, which blocking actionability
+gaps remain, or why Actionability was raised) so the revise agent has something concrete to act on
+even if the review agent's own prose feedback missed it.
 
 Usage:
     python3 scripts/enforce_citation_gate.py <feature_dir> \
@@ -24,7 +25,10 @@ Usage:
         --actionability-result '<json from validate_quality_evidence.py>'
 
 Exit code 0 always; prints a JSON object to stdout with `status` one of "overridden", "ok",
-"skip", or "error" (with an `error` message field).
+"skip", or "error" (with an `error` message field). Every non-error result also carries
+`next`: "revise" | "proceed" — the revision decision from filter_for_revision() applied to the
+(possibly corrected) review, so test-plan-review Step 4 branches on a script result instead of
+re-deriving the rule from the verdict.
 """
 
 import argparse
@@ -35,6 +39,7 @@ import sys
 
 import yaml
 
+from scripts.filter_for_revision import filter_for_revision
 from scripts.utils.error_utils import exit_graceful
 from scripts.utils.frontmatter_utils import read_frontmatter_validated, update_frontmatter
 from scripts.utils.schemas import CRITERION_LABELS, REVIEW_CRITERIA, ValidationError, compute_verdict_and_pass
@@ -112,6 +117,7 @@ def _build_feedback_note(
     actionability_result: dict | None,
     actionability_capped: bool,
     specificity_capped: bool,
+    actionability_raised: bool,
 ) -> str:
     lines: list[str] = []
 
@@ -171,6 +177,19 @@ def _build_feedback_note(
             "\nFix: specify concrete environment, test-data, and test-user permissions, or retain TBD "
             "with an explicit resolution path."
         )
+
+    if actionability_raised:
+        if lines:
+            lines.append("\n---")
+        lines.append(
+            "**Automated correction (deterministic actionability gate)**: Actionability was "
+            "raised to 2/2 — the deterministic actionability evidence is valid and reports no blocking "
+            "gaps (`bare_tbd` and `missing_details` are empty), so the recorded score was too strict."
+        )
+        advisory_gaps = (actionability_result or {}).get("advisory_gaps") or []
+        if advisory_gaps:
+            lines.append("\nAdvisory gaps (non-blocking; they do not lower the score):")
+            lines.extend(f"- {item}" for item in advisory_gaps)
 
     if specificity_capped:
         if lines:
@@ -419,7 +438,9 @@ def cap_scope_fidelity(
 
 
 def cap_actionability(scores: dict, actionability_result: dict) -> dict:
-    """Preserve valid Actionability, or cap it to 1 for blocking evidence."""
+    """Make Actionability follow the deterministic evidence in both directions: cap it to 1 for
+    blocking evidence, or raise it to 2 when there is none (advisory gaps alone never lower it).
+    """
     _validate_scores(scores)
     _validate_required_quality_result(actionability_result, "actionability_result", _validate_actionability_for_capping)
 
@@ -428,19 +449,16 @@ def cap_actionability(scores: dict, actionability_result: dict) -> dict:
     if blocking_gaps:
         if scores["actionability"] <= 1:
             return {"overridden": False, "scores": scores}
-
         scores["actionability"] = 1
-        verdict, score, passed = compute_verdict_and_pass(scores)
-        return {
-            "overridden": True,
-            "scores": scores,
-            "score": score,
-            "pass": passed,
-            "verdict": verdict,
-            "actionability_capped": True,
-        }
+        flag = "actionability_capped"
+    else:
+        if scores["actionability"] == 2:
+            return {"overridden": False, "scores": scores}
+        scores["actionability"] = 2
+        flag = "actionability_raised"
 
-    return {"overridden": False, "scores": scores}
+    verdict, score, passed = compute_verdict_and_pass(scores)
+    return {"overridden": True, "scores": scores, "score": score, "pass": passed, "verdict": verdict, flag: True}
 
 
 def cap_specificity(scores: dict, boilerplate_result: dict) -> dict:
@@ -495,6 +513,7 @@ def apply_score_caps(
     scope_fidelity_capped = scope_result["overridden"]
     actionability_overridden = actionability_cap_result["overridden"]
     actionability_capped = actionability_cap_result.get("actionability_capped", False)
+    actionability_raised = actionability_cap_result.get("actionability_raised", False)
     specificity_capped = specificity_result["overridden"]
     if not scope_fidelity_capped and not actionability_overridden and not specificity_capped:
         return {"overridden": False, "scores": specificity_result["scores"]}
@@ -512,6 +531,7 @@ def apply_score_caps(
         "verdict": final["verdict"],
         "scope_fidelity_capped": scope_fidelity_capped,
         "actionability_capped": actionability_capped,
+        "actionability_raised": actionability_raised,
         "specificity_capped": specificity_capped,
     }
 
@@ -559,6 +579,7 @@ def enforce_citation_gate(
     scores, score, passed, verdict = result["scores"], result["score"], result["pass"], result["verdict"]
     scope_fidelity_capped = result["scope_fidelity_capped"]
     actionability_capped = result["actionability_capped"]
+    actionability_raised = result["actionability_raised"]
     specificity_capped = result["specificity_capped"]
     updates = {"scores": scores, "score": score, "pass": passed, "verdict": verdict}
 
@@ -576,6 +597,7 @@ def enforce_citation_gate(
         actionability_result,
         actionability_capped,
         specificity_capped,
+        actionability_raised,
     )
 
     # A first-pass review sets before_score/before_scores equal to score not a genuine prior-cycle baseline.
@@ -586,7 +608,7 @@ def enforce_citation_gate(
         if before_scores:
             if scope_fidelity_capped:
                 before_scores["scope_fidelity"] = scores["scope_fidelity"]
-            if actionability_capped:
+            if actionability_capped or actionability_raised:
                 before_scores["actionability"] = scores["actionability"]
             if specificity_capped:
                 before_scores["specificity"] = scores["specificity"]
@@ -606,8 +628,19 @@ def enforce_citation_gate(
         "verdict": verdict,
         "scope_fidelity_capped": scope_fidelity_capped,
         "actionability_capped": actionability_capped,
+        "actionability_raised": actionability_raised,
         "specificity_capped": specificity_capped,
     }
+
+
+def decide_revision_next(feature_dir: str) -> str:
+    """Map filter_for_revision()'s decision onto the gate's `next` field.
+
+    Delegates rather than re-implementing the rule so there is one source of truth: "revise" when
+    any scores.* is < 2, "proceed" otherwise — including a missing review file and a recorded
+    score regression, both of which filter_for_revision() reports as SKIP.
+    """
+    return "revise" if filter_for_revision(feature_dir) == "REVISE" else "proceed"
 
 
 def _fail(message: str) -> None:
@@ -686,19 +719,22 @@ def main():
             scope_coverage_result=scope_coverage,
             actionability_result=actionability,
         )
+        # Decided after the caps are persisted, so a score the gate lowered below 2 triggers revision.
+        next_step = decide_revision_next(args.feature_dir)
     except ValueError as exc:
         _fail(str(exc))
     except (ValidationError, OSError, yaml.YAMLError) as exc:
         _fail(f"invalid TestPlanReview.md: {exc}")
 
     if result is None:
-        print(json.dumps({"status": "skip"}))
+        payload = {"status": "skip"}
     elif result["overridden"]:
         payload = {"status": "overridden"}
         payload.update({k: v for k, v in result.items() if k != "overridden"})
-        print(json.dumps(payload))
     else:
-        print(json.dumps({"status": "ok"}))
+        payload = {"status": "ok"}
+    payload["next"] = next_step
+    print(json.dumps(payload))
     sys.exit(0)
 
 

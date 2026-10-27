@@ -243,8 +243,8 @@ The review agent writes rubric scores, feedback, and validated frontmatter to
 
 Reapply Scope Fidelity/Specificity caps and the Actionability correction deterministically.
 `enforce_citation_gate.py` always exits 0 and reports JSON: blocking evidence caps Actionability
-above 1 to 1/2; valid evidence never raises 0/1. `actionability_capped` is true only if the cap
-changes the score.
+above 1 to 1/2; valid evidence with no blocking gaps raises 0/1 to 2/2. `actionability_capped` /
+`actionability_raised` is true only if that correction changes the score.
 
 ```bash
 repo_root=$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)
@@ -262,36 +262,30 @@ case "$gate_status" in
         exit 1
         ;;
 esac
+gate_next=$(printf '%s\n' "$gate_result" | jq -r '.next')
 ```
 
 If `overridden`, Step 4 uses corrected scores/feedback, not the agent's numbers. Any status besides
-`overridden`/`ok`/`skip` means gate failure; stop.
+`overridden`/`ok`/`skip` means gate failure; stop. Every non-error result carries `next`
+(`revise`/`proceed`): the `filter_for_revision.py` decision on the corrected scores.
 
 ### Step 4: Check Criteria and Revise (max 2 cycles)
 
-After the review agent completes, read the review frontmatter:
+Branch **only** on `gate_next` from Step 3.5. Do not decide from the verdict, total, or your own
+reading of the scores — a Ready verdict with any `scores.*` below 2 still requires revision.
 
-```bash
-(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/frontmatter.py read <feature_dir>/TestPlanReview.md)
-```
-
-If all five `scores.*` are `2`, proceed to Step 5. The result can be Ready with non-empty
-`actionability_result.advisory_gaps`; these are visible follow-ups, not revision failures.
-
-If any `scores.*` is `< 2`, revise. Missing/vague OpenShift/RHOAI versions or incomplete test-data
-format/examples in `advisory_gaps` alone do not trigger revision.
+- `proceed` → go to Step 5. The result can be Ready with non-empty
+  `actionability_result.advisory_gaps`; these are visible follow-ups, not revision failures.
+- `revise` → enter the Revision Loop. Missing/vague OpenShift/RHOAI versions or incomplete
+  test-data format/examples in `advisory_gaps` alone do not trigger revision.
 
 #### Revision Loop
 
 Initialize cycle counter: `reassess_cycle=0`
 
-**4a. Filter for revision:**
-
-```bash
-(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/filter_for_revision.py <feature_dir>)
-```
-
-If output is `SKIP`, stop the loop and proceed to Step 5.
+**4a. Revision decision:** Continue only if the latest script decision says revise — `gate_next`
+from Step 3.5 on the first cycle, the 4h `filter_for_revision.py` output afterwards. Otherwise stop
+the loop and proceed to Step 5.
 
 **4b. Launch revise agent (fork):**
 
@@ -389,8 +383,15 @@ Repeat Step 3 with `{FIRST_PASS}=false`, then Step 3.5 against the recomputed St
 
 **4h. Check criteria again:**
 
-Read review frontmatter. Stop if all criteria are `2`; return to 4a if any remain `< 2` and cycles
-remain. Otherwise proceed to Step 5.
+Run after 4g so the score-regression check sees the restored `before_score` (the 4f gate ran before
+it, so ignore its `gate_next`):
+
+```bash
+(cd "$(cd -P "${CLAUDE_SKILL_DIR}/../.." && pwd -P)" && uv run python scripts/filter_for_revision.py <feature_dir>)
+```
+
+Branch only on this output: return to 4a on `REVISE` if cycles remain; otherwise (`SKIP`, or no
+cycles left) proceed to Step 5.
 
 ### Step 5: Present Results
 

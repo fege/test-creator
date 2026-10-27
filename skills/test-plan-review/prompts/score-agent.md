@@ -85,10 +85,10 @@ Calibration examples (preloaded): {CALIBRATION_TEXT}
 | Score | Definition |
 |-------|------------|
 | **0** | Section 3.1 environment/configuration is absent or only vague/unavailable, a required value is explicitly left as a bare/unresolved TBD, or test users lack usable role, permission, and concrete-resource evidence. Broad collection or wildcard resources are unusable. A tester cannot start without resolving a blocking gap. |
-| **1** | Blocking evidence is incomplete but not severe enough for 0, or another material operational deficiency remains. Use the deterministic blocking fields as evidence; do not use an advisory gap alone as the reason for this score. |
+| **1** | Blocking evidence is incomplete but not severe enough for 0. Use the deterministic blocking fields as evidence; do not use an advisory gap alone as the reason for this score. |
 | **2** | Section 3.1 contains substantive environment/configuration evidence, test users have defined roles, permissions, and concrete resources, and no blocking actionability evidence remains. Missing or vague OpenShift/RHOAI versions and incomplete test-data format/examples may remain as `advisory_gaps` and do not prevent 2/2. |
 
-**Enforcement:** If `ACTIONABILITY_RESULT.valid == false` (that is, `bare_tbd` or `missing_details` contains blocking evidence), do not claim Actionability 2/2; score it at most 1 and use those fields as evidence. If `valid == true` and only `advisory_gaps` are present, do not cap or lower Actionability solely for those advisories.
+**Enforcement:** If `ACTIONABILITY_RESULT.valid == false` (that is, `bare_tbd` or `missing_details` contains blocking evidence), do not claim Actionability 2/2; score it at most 1 and use those fields as evidence. If `valid == true` and only `advisory_gaps` are present, do not cap or lower Actionability solely for those advisories; score it 2 — the deterministic gate raises a lower score to 2 in that case.
 
 **Smell test:** Hand Section 3 to a platform engineer who knows nothing about the feature. Could
 they begin provisioning from substantive environment/configuration details? Questions about

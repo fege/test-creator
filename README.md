@@ -161,7 +161,7 @@ The actionability payload separates blocking `bare_tbd`/`missing_details` from n
 `advisory_gaps`; the latter remain visible in `TestPlanGaps.md` but do not cap scores or trigger
 revision by themselves. The persisted review gate (`enforce_citation_gate.py`) can cap Scope
 Fidelity/Specificity and blocking Actionability evidence when deterministic evidence contradicts
-a 2/2 rubric score; valid non-blocking Actionability preserves the scorer's recorded score.
+a 2/2 rubric score; valid Actionability evidence with no blocking gaps raises a 0/1 score to 2/2.
 The stateless scorer gate
 (`cap_scope_fidelity.py`) applies the same Scope Fidelity/Specificity caps and Actionability
 correction before `test-plan-score` presents its result, so scorer compliance is not trusted.

@@ -47,6 +47,7 @@ from tests.consts.validation_constants import (
     ACTIONABILITY_UNRESOLVED_TBD_VISIBILITY_PLAN,
     ACTIONABILITY_YAML_EXAMPLE_VALUE_PLAN,
     ACTIONABILITY_WRAPPED_GENERIC_RBAC_RESOLUTION_PLAN,
+    ACTIONABILITY_WRAPPED_PLURAL_OWNER_RBAC_RESOLUTION_PLAN,
     ACTIONABILITY_WRAPPED_RBAC_RESOLUTION_PLAN,
     FULLY_MAPPED_SCOPE_PLAN,
     LOGICAL_MARKDOWN_ENTRY_CASES,
@@ -406,6 +407,12 @@ class TestValidateActionability:
             "concrete-timing-is-accepted",
             "concrete-decision-timing-is-accepted",
             "named-issue-source-is-accepted",
+            "generic-bare-plural-teams-target-is-rejected",
+            "generic-plural-test-teams-target-is-rejected",
+            "generic-plural-owners-target-is-rejected",
+            "generic-plural-engineering-teams-target-is-rejected",
+            "named-plural-teams-owner-is-accepted",
+            "named-plural-maintainers-owner-is-accepted",
         ),
     )
     def test_resolution_target_boundary_rejects_generic_targets_even_with_substantive_infrastructure(
@@ -431,6 +438,11 @@ class TestValidateActionability:
                 ACTIONABILITY_WRAPPED_RBAC_RESOLUTION_PLAN,
                 True,
                 id="wrapped-platform-owner-is-resolved-and-visible",
+            ),
+            pytest.param(
+                ACTIONABILITY_WRAPPED_PLURAL_OWNER_RBAC_RESOLUTION_PLAN,
+                True,
+                id="wrapped-plural-platform-teams-owner-is-resolved-and-visible",
             ),
             pytest.param(
                 ACTIONABILITY_WRAPPED_GENERIC_RBAC_RESOLUTION_PLAN,
