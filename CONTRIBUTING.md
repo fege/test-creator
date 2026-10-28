@@ -32,7 +32,7 @@ flake8, `make lint` for skillsaw.
 |------|----------|
 | `scripts/` | Deterministic Python CLIs (validation, parsing, Jira, repo ops) — no LLM calls |
 | `scripts/utils/` | Shared utilities (schemas, frontmatter, error handling) |
-| `skills/` | One `SKILL.md` per skill; shared scripts via `skills/_common/scripts` |
+| `skills/` | One `SKILL.md` per skill; shared scripts in the plugin-root `scripts/` directory (reached via relative paths) |
 | `tests/unit/`, `tests/integration/` | Tests, run with `uv run pytest` |
 | `tests/consts/` | Shared test data by domain (`<domain>_constants.py`) |
 | `tests/helpers.py`, `tests/conftest.py` | Artifact factories and shared fixtures (`run_cli`, `git_repo`, `feature_dir`) |

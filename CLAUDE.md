@@ -21,7 +21,7 @@ reference, kept in one place so the listings cannot drift apart. CI enforces
 
 ### Plugin structure
 
-[`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) defines the plugin metadata. Each skill lives in `skills/<skill-name>/SKILL.md`. Skills share Python utilities through a symlink chain: `skills/<name>/scripts → skills/_common/scripts → ../../scripts`. The only exception is `test-plan-ui-verify`, which has its own scripts directory with Playwright-based browser automation code.
+[`.claude-plugin/plugin.json`](.claude-plugin/plugin.json) defines the plugin metadata. Each skill lives in `skills/<skill-name>/SKILL.md`. Skills share Python utilities in the plugin-root `scripts/` directory via relative paths such as `${CLAUDE_SKILL_DIR}/../../scripts/...`. The only exception is `test-plan-ui-verify`, which has its own scripts directory with Playwright-based browser automation code.
 
 ### Design principle: scripts do logic, LLMs do semantics
 

@@ -44,15 +44,13 @@ Install from the [opendatahub-io/skills-registry](https://github.com/opendatahub
 claude plugin marketplace add opendatahub-io/skills-registry
 
 # Install test-plan plugin
-/plugin install test-plan@opendatahub-skills
+claude plugin install test-plan@opendatahub-skills
 ```
 
-This clones the repository and makes skills immediately available. Then install Python dependencies:
+You can also run `/plugin install test-plan@opendatahub-skills` inside Claude Code.
 
-```bash
-cd ~/.claude/plugins/test-plan
-uv sync --extra dev
-```
+The marketplace install copies the plugin into Claude Code's plugin cache and makes the skills available.
+The test-plan skills install their Python dependencies on first run.
 
 Use skills:
 ```bash
@@ -79,7 +77,7 @@ uv sync --extra dev
 
 Skills are available from `skills/` directory.
 
-**Note**: Skills use symlinks for shared utilities (`_common/scripts → ../../scripts`). Both installation methods clone the full repository, so symlinks resolve correctly.
+**Note**: Skills share the plugin-root `scripts/` directory via relative paths (e.g. `${CLAUDE_SKILL_DIR}/../../scripts/...`). Both installation methods include the full plugin tree, so those paths resolve correctly.
 
 User-invocable skills define frontmatter used for slash-command discovery and invocation.
 
@@ -367,7 +365,9 @@ skills/
 ├── test-plan-resolve-gaps/
 │   └── SKILL.md
 ├── test-plan-review/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   ├── calibration/
+│   └── prompts/
 ├── test-plan-create-cases/
 │   ├── SKILL.md
 │   └── test-case-template.md
@@ -376,17 +376,22 @@ skills/
 ├── test-plan-publish/
 │   └── SKILL.md
 ├── test-plan-resolve-feedback/
-│   └── SKILL.md
+│   ├── SKILL.md
+│   └── skills/
 ├── test-plan-case-implement/
 │   └── SKILL.md            # Main orchestration skill
 ├── test-plan-generate-test-file/
 │   └── SKILL.md            # Test file generation sub-agent
+├── test-plan-score-test-function/
+│   ├── SKILL.md
+│   ├── calibration/
+│   └── prompts/
 ├── test-plan-ui-verify/
 │   ├── README.md
-│   └── SKILL.md
+│   ├── SKILL.md
+│   └── scripts/             # Playwright-based browser automation (own scripts)
 ├── test-plan-score/
 │   └── SKILL.md
-└── _common/                # Shared scripts (symlinked)
 
 scripts/
 ├── frontmatter.py          # YAML frontmatter validation and manipulation
@@ -420,6 +425,22 @@ scripts/
 ├── filter_for_revision.py # Decide whether a test plan review warrants revision
 ├── preserve_review_state.py # Save/restore cumulative review state across re-assessment cycles
 ├── add_jira_labels.py      # Add labels to Jira issues (CLI wrapper)
+├── bootstrap.sh            # Skills' pre-flight entry point
+├── checks/                 # Validation pattern files (core/ and optional team configs)
+├── consolidate_gaps_and_stamp.py # Consolidate gaps, stamp frontmatter, and clean staged output
+├── detect_boilerplate.py   # Detect generic boilerplate in test objectives, priorities, and risks
+├── discover_feature_dir.py # Read and validate the saved feature output-dir marker
+├── ensure_feature_test_dir.py # Find or create a feature package under the component test directory
+├── get_component_test_dir.py # Map TestPlan.md components to a target-repository test directory
+├── get_filtered_tcs.py    # Filter test cases for implementation
+├── get_framework.py       # Get the test framework from repository test context
+├── load_calibration.py    # Load calibration example files
+├── load_test_context.py   # Load odh-test-context JSON for a target repository
+├── parse_skill_args.py    # Parse skill arguments to extract flags and values
+├── remove_runtime_alias.py # Remove the bootstrap helper link from a test-plan output directory
+├── resolve_additional_docs.py # Resolve and validate additional_docs from TestPlan.md
+├── validate_target_repo.py # Validate the target repository for test case implementation
+├── validate_test_scope.py # Validate that test levels contain only e2e/UI test types
 └── utils/                  # Shared utilities
     ├── schemas.py          # Schema validation (test-plan, test-case, test-gaps, review)
     ├── frontmatter_utils.py # Frontmatter read/write operations
@@ -430,7 +451,11 @@ scripts/
     ├── text_utils.py       # Text transformation utilities (snake_case conversion)
     ├── markdown_utils.py   # Parse markdown section content
     ├── strat_utils.py      # Parse STRAT sections from fetched Jira wiki markup
-    └── test_analyzer.py    # Common setup requirements identification
+    ├── test_analyzer.py    # Common setup requirements identification
+    ├── consolidate_gaps.py # Consolidate and deduplicate analyzer gap bullets
+    ├── error_utils.py      # Print an error message to stderr and exit
+    ├── snapshot_io.py      # Symlink-safe file I/O primitives for strategy snapshots
+    └── validation_config_loader.py # Load and merge core and team validation patterns
 
 tests/
 ├── unit/                   # Unit tests (fast, isolated)
@@ -450,4 +475,4 @@ conventions for AI coding agents are in [AGENTS.md](AGENTS.md); architecture bac
 [CLAUDE.md](CLAUDE.md).
 
 The test suite layout is described in [AGENTS.md](AGENTS.md#test-conventions) — the
-`tests/` directory itself is the source of truth for the current file list.
+`tests/`, `scripts/`, and `skills/` directories themselves are the source of truth for current file lists.
