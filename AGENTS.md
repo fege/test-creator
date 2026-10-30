@@ -98,7 +98,7 @@ every PR (see [`.github/workflows/`](.github/workflows/)).
   - use destinations that escape the intended root — absolute paths, `..`, or unsanitized
     CLI/frontmatter values used as filesystem destinations (or as read sources whose contents
     are copied into artifacts or LLM-facing output);
-  - put secrets in argv, URLs, logs, exception messages, or JSON output.
+  - put secrets in argv, URLs, logs, exception messages, JSON output, or generated artifacts.
 
   Past bugs of this class: #62 (`fetch_issue.py` output path) and #79 (`bootstrap.sh` symlink
   inside the run directory). TOCTOU races on files the process already owns, `O_NOFOLLOW` on
