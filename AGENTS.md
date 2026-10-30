@@ -64,7 +64,25 @@ every PR (see [`.github/workflows/`](.github/workflows/)).
   following the separation in `tests/unit/test_enforce_citation_gate.py` (pure-function
   tests, persistence tests, and CLI tests as separate classes).
 - **Assertion style:** prefer exact substring assertions (positive and negative) over
-  re-parsing generated documents in the test.
+  re-parsing generated documents (markdown artifacts) in the test. JSON emitted on stdout is
+  different — see "weak JSON checks" below.
+- **Test anti-patterns** — every test must be able to catch a bug. Do not write:
+  - **No effective assertion**: the test runs code but asserts nothing, or only trivially-true
+    things (`assert True`, `assert result is not None` as the sole check, a literal against
+    itself).
+  - **Mocking the unit under test**: the function or class being tested is itself patched, so
+    the real logic never runs. Mock only collaborators and external boundaries (HTTP, Jira,
+    filesystem, subprocess).
+  - **Asserting only on the mock**: when the function returns a value or has an observable
+    effect (file written, JSON emitted), assert on that value or effect, not just that a mock
+    was called. `mock.assert_called_once_with(...)` alone is fine for pure side-effect
+    functions with no return value (API callers, writers).
+  - **Tautological expectations**: the expected value is derived from the same code path that
+    produces the actual value, so the assertion cannot fail.
+  - **Swallowed failures**: a `try`/`except` that hides assertion errors, or a
+    `pytest.raises` so broad it passes when the wrong exception is raised.
+  - **Weak JSON checks**: for scripts that output JSON, assert on the parsed values that
+    `run_cli` returns — not merely that stdout is non-empty or contains some substring.
 
 ## Code conventions
 
@@ -73,6 +91,20 @@ every PR (see [`.github/workflows/`](.github/workflows/)).
   strings. Errors are structured JSON: `{"status": "failed", "error": "..."}`.
 - **Credentials** come from environment variables (`JIRA_URL`, `JIRA_USER`, `JIRA_TOKEN`) —
   never hardcoded.
+- **Script security**: scripts are a local single-user CLI run by the developer on their own
+  machine — not a network service, not setuid, not a shared host with a concurrent untrusted
+  writer. Within that threat model, scripts must not:
+  - write through a planted symlink (a confused-deputy overwrite of a secret);
+  - use destinations that escape the intended root — absolute paths, `..`, or unsanitized
+    CLI/frontmatter values used as filesystem destinations (or as read sources whose contents
+    are copied into artifacts or LLM-facing output);
+  - put secrets in argv, URLs, logs, exception messages, JSON output, or generated artifacts
+    (including Markdown files such as `TestPlan.md` and `TC-*.md`).
+
+  Past bugs of this class: #62 (`fetch_issue.py` output path) and #79 (`bootstrap.sh` symlink
+  inside the run directory). TOCTOU races on files the process already owns, `O_NOFOLLOW` on
+  reads that cannot lead to overwriting a secret, local reads that stay on the machine, and
+  SSRF or multi-tenant concerns do not apply here.
 - **`SKILL.md` files contain instructions, not logic** — procedural steps go into
   `scripts/`. skillsaw enforces context budgets (warn 6000 / error 8000 tokens) in strict
   mode.
@@ -107,6 +139,5 @@ Fullsend sandboxes restrict network egress: `pre-commit` cannot fetch its hook r
 
 - Architecture and skill pipeline → [CLAUDE.md](CLAUDE.md)
 - Skill catalog and installation → [README.md](README.md)
-- Review threat model and per-path review instructions → [`.coderabbit.yaml`](.coderabbit.yaml)
 - Human review workflow for generated test plans →
   [docs/human-review-guide.md](docs/human-review-guide.md)

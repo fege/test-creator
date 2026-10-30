@@ -65,9 +65,6 @@ CI runs on every PR:
 - **Tests** — full pytest suite with `--cov-fail-under=70`.
 - **DCO** — sign-off check.
 
-CodeRabbit also reviews PRs using the per-path instructions and threat model in
-[`.coderabbit.yaml`](.coderabbit.yaml).
-
 ## Working with the fullsend agents
 
 This repository runs [fullsend](https://github.com/fullsend-ai/fullsend) agents:

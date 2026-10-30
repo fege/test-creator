@@ -91,5 +91,4 @@ Test plan artifacts (TestPlan.md, TC-*.md files) are written to a separate direc
 
 The contribution rules — deterministic scripts with no LLM calls, credentials via
 environment variables, structured JSON errors, instruction-only SKILL.md files — are
-stated once in [AGENTS.md](AGENTS.md#code-conventions). Review-time enforcement and the
-per-path threat model live in [`.coderabbit.yaml`](.coderabbit.yaml).
+stated once in [AGENTS.md](AGENTS.md#code-conventions), together with the script threat model.
